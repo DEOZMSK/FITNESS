@@ -56,6 +56,7 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     session_payload TEXT NOT NULL,
+                    lead_sent INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 );
@@ -65,6 +66,7 @@ class Database:
                     user_id INTEGER NOT NULL,
                     diagnosis_session_id INTEGER,
                     answers_payload TEXT NOT NULL,
+                    lead_sent INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                     FOREIGN KEY (diagnosis_session_id) REFERENCES diagnosis_sessions(id) ON DELETE SET NULL
@@ -87,6 +89,7 @@ class Database:
                     amount INTEGER NOT NULL,
                     currency TEXT NOT NULL,
                     status TEXT NOT NULL,
+                    lead_sent INTEGER NOT NULL DEFAULT 1,
                     payload TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -113,6 +116,24 @@ class Database:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
                 """
+            )
+            self._ensure_column(
+                conn=conn,
+                table_name="diagnosis_sessions",
+                column_name="lead_sent",
+                column_sql="lead_sent INTEGER NOT NULL DEFAULT 1",
+            )
+            self._ensure_column(
+                conn=conn,
+                table_name="questionnaire_answers",
+                column_name="lead_sent",
+                column_sql="lead_sent INTEGER NOT NULL DEFAULT 1",
+            )
+            self._ensure_column(
+                conn=conn,
+                table_name="payments",
+                column_name="lead_sent",
+                column_sql="lead_sent INTEGER NOT NULL DEFAULT 1",
             )
             self._seed_products(conn)
             self._seed_reviews(conn)
@@ -151,15 +172,16 @@ class Database:
         user_id: int,
         session_payload: dict[str, Any],
         calculation_payload: dict[str, Any],
+        lead_sent: bool = True,
     ) -> int:
         """Persist diagnosis session and related calculation. Return session id."""
         with self.connection() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO diagnosis_sessions (user_id, session_payload)
-                VALUES (?, ?)
+                INSERT INTO diagnosis_sessions (user_id, session_payload, lead_sent)
+                VALUES (?, ?, ?)
                 """,
-                (user_id, json.dumps(session_payload, ensure_ascii=False)),
+                (user_id, json.dumps(session_payload, ensure_ascii=False), int(lead_sent)),
             )
             diagnosis_session_id = int(cursor.lastrowid)
             conn.execute(
@@ -180,18 +202,25 @@ class Database:
         user_id: int,
         answers_payload: dict[str, Any],
         diagnosis_session_id: int | None = None,
+        lead_sent: bool = True,
     ) -> int:
         """Persist full questionnaire answers. Return questionnaire record id."""
         with self.connection() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO questionnaire_answers (user_id, diagnosis_session_id, answers_payload)
-                VALUES (?, ?, ?)
+                INSERT INTO questionnaire_answers (
+                    user_id,
+                    diagnosis_session_id,
+                    answers_payload,
+                    lead_sent
+                )
+                VALUES (?, ?, ?, ?)
                 """,
                 (
                     user_id,
                     diagnosis_session_id,
                     json.dumps(answers_payload, ensure_ascii=False),
+                    int(lead_sent),
                 ),
             )
             return int(cursor.lastrowid)
@@ -204,13 +233,22 @@ class Database:
         status: str,
         provider_payment_id: str | None = None,
         payload: dict[str, Any] | None = None,
+        lead_sent: bool = True,
     ) -> int:
         """Persist payment event and return payment record id."""
         with self.connection() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO payments (user_id, provider_payment_id, amount, currency, status, payload)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO payments (
+                    user_id,
+                    provider_payment_id,
+                    amount,
+                    currency,
+                    status,
+                    lead_sent,
+                    payload
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
@@ -218,10 +256,47 @@ class Database:
                     amount,
                     currency,
                     status,
+                    int(lead_sent),
                     json.dumps(payload, ensure_ascii=False) if payload else None,
                 ),
             )
             return int(cursor.lastrowid)
+
+    def mark_diagnosis_lead_unsent(self, diagnosis_session_id: int) -> None:
+        """Mark diagnosis lead as not sent for retries."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                UPDATE diagnosis_sessions
+                SET lead_sent = 0
+                WHERE id = ?
+                """,
+                (diagnosis_session_id,),
+            )
+
+    def mark_payment_lead_unsent(self, payment_id: int) -> None:
+        """Mark payment lead as not sent for retries."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                UPDATE payments
+                SET lead_sent = 0
+                WHERE id = ?
+                """,
+                (payment_id,),
+            )
+
+    def mark_questionnaire_lead_unsent(self, questionnaire_id: int) -> None:
+        """Mark full questionnaire lead as not sent for retries."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                UPDATE questionnaire_answers
+                SET lead_sent = 0
+                WHERE id = ?
+                """,
+                (questionnaire_id,),
+            )
 
     def _seed_products(self, conn: sqlite3.Connection) -> None:
         conn.executemany(
@@ -249,3 +324,17 @@ class Database:
             """,
             SEED_REVIEWS,
         )
+
+    def _ensure_column(
+        self,
+        conn: sqlite3.Connection,
+        table_name: str,
+        column_name: str,
+        column_sql: str,
+    ) -> None:
+        """Add missing column for backward-compatible migrations."""
+        rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        existing_columns = {str(row["name"]) for row in rows}
+        if column_name in existing_columns:
+            return
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_sql}")
