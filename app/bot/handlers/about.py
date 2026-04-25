@@ -6,20 +6,18 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    LabeledPrice,
     Message,
+    PreCheckoutQuery,
 )
 
-from app.config import load_settings
 from app.data.products import products
 from app.data.reviews import reviews
 from app.data.trainer_profile import trainer_profile
 from app.bot.states import DonateStates
+from app.db import Database
+from app.services import DONATION_MIN_AMOUNT, create_invoice, send_payment_event
 
 router = Router(name=__name__)
-
-DONATION_MIN_AMOUNT = 300
-
 
 def _about_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -176,16 +174,58 @@ async def process_donation_amount(message: Message, state: FSMContext) -> None:
         )
         return
 
-    settings = load_settings()
     await state.clear()
+    await create_invoice(message=message, amount_rub=amount)
 
-    await message.bot.send_invoice(
-        chat_id=message.chat.id,
-        title="Донат тренеру",
-        description="Поддержка фитнес-проекта",
-        payload=f"donation:{message.from_user.id if message.from_user else 'unknown'}",
-        provider_token=settings.provider_token,
-        currency="RUB",
-        prices=[LabeledPrice(label="Донат", amount=amount * 100)],
-        start_parameter="fitness-donation",
+
+@router.pre_checkout_query()
+async def pre_checkout_handler(query: PreCheckoutQuery) -> None:
+    """Approve pre-checkout query from Telegram."""
+    await query.answer(ok=True)
+
+
+@router.message(F.successful_payment)
+async def successful_payment_handler(message: Message) -> None:
+    """Persist successful payment and send admin event."""
+    if not message.successful_payment or not message.from_user:
+        return
+
+    payload = message.successful_payment.invoice_payload
+    if not payload.startswith("donation:"):
+        return
+
+    _, payment_ref = payload.split(":", 1)
+    amount_rub = message.successful_payment.total_amount // 100
+    db = Database()
+    user_id = db.upsert_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+        last_name=message.from_user.last_name,
     )
+    payment_id = db.record_payment(
+        user_id=user_id,
+        amount=amount_rub,
+        currency=message.successful_payment.currency,
+        status="successful",
+        provider_payment_id=message.successful_payment.telegram_payment_charge_id,
+        payload={
+            "invoice_payload": payload,
+            "payment_ref": payment_ref,
+            "telegram_payment_charge_id": message.successful_payment.telegram_payment_charge_id,
+            "provider_payment_charge_id": message.successful_payment.provider_payment_charge_id,
+            "purpose": "donation",
+        },
+    )
+    try:
+        await send_payment_event(
+            bot=message.bot,
+            user_id=user_id,
+            payment_id=payment_id,
+            amount_rub=amount_rub,
+            purpose="donation",
+        )
+    except Exception:
+        pass
+
+    await message.answer("Спасибо за оплату! Платёж успешно получен.")

@@ -7,9 +7,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.bot.states import FullQuestionnaireStates, QuickDiagnosticsStates
-from app.config import load_settings
 from app.data.contraindications import SAFE_STOP_MESSAGE, STOP_FACTORS
 from app.db import Database
+from app.services import send_diagnostics_summary
 
 router = Router(name=__name__)
 
@@ -58,14 +58,6 @@ async def _get_or_create_user_id(message: Message) -> int:
         first_name=message.from_user.first_name,
         last_name=message.from_user.last_name,
     )
-
-
-async def _notify_admin(title: str, payload: dict[str, object], bot, user_id: int) -> None:
-    settings = load_settings()
-    lines = [f"<b>{title}</b>", f"User ID: <code>{user_id}</code>"]
-    for key, value in payload.items():
-        lines.append(f"• <b>{key}</b>: {value}")
-    await bot.send_message(settings.admin_id, "\n".join(lines))
 
 
 @router.callback_query(F.data == "diag:start")
@@ -245,13 +237,23 @@ async def quick_health(message: Message, state: FSMContext) -> None:
     payload["stop_factors"] = found_factors
 
     db = Database()
-    db.save_diagnosis_session_and_calculation(
+    diagnosis_session_id = db.save_diagnosis_session_and_calculation(
         user_id=user_id,
         session_payload=payload,
         calculation_payload={"status": "stopped" if found_factors else "completed"},
     )
 
-    await _notify_admin("Новая быстрая диагностика", payload, message.bot, user_id)
+    try:
+        await send_diagnostics_summary(
+            bot=message.bot,
+            user_id=user_id,
+            lead_id=diagnosis_session_id,
+            payload=payload,
+            title="Новая быстрая диагностика",
+            lead_type="diagnosis",
+        )
+    except Exception:
+        pass
 
     await state.clear()
     if found_factors:
@@ -427,9 +429,19 @@ async def finish_full_questionnaire(message: Message, state: FSMContext) -> None
 
     user_id = await _get_or_create_user_id(message)
     db = Database()
-    db.save_full_questionnaire(user_id=user_id, answers_payload=payload)
+    questionnaire_id = db.save_full_questionnaire(user_id=user_id, answers_payload=payload)
 
-    await _notify_admin("Новая полная анкета", payload, message.bot, user_id)
+    try:
+        await send_diagnostics_summary(
+            bot=message.bot,
+            user_id=user_id,
+            lead_id=questionnaire_id,
+            payload=payload,
+            title="Новая полная анкета",
+            lead_type="questionnaire",
+        )
+    except Exception:
+        pass
 
     await state.clear()
     if found_factors:
