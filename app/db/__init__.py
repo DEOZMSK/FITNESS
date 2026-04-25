@@ -1,1 +1,5 @@
-"""Database layer package."""
+"""Database helpers."""
+
+from app.db.database import Database
+
+__all__ = ["Database"]

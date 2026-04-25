@@ -9,6 +9,7 @@ from aiogram import Bot, Dispatcher
 
 from app.bot.handlers import router as main_router
 from app.config import load_settings
+from app.db import Database
 
 
 async def main() -> None:
@@ -20,6 +21,9 @@ async def main() -> None:
     except RuntimeError as exc:
         logging.error("Failed to start bot: %s", exc)
         return
+
+    database = Database()
+    database.init_db()
 
     bot = Bot(token=settings.telegram_bot_token)
     dp = Dispatcher()
