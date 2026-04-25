@@ -15,9 +15,13 @@ async def main() -> None:
     """Initialize and start bot polling."""
     logging.basicConfig(level=logging.INFO)
 
-    settings = load_settings()
+    try:
+        settings = load_settings()
+    except RuntimeError as exc:
+        logging.error("Failed to start bot: %s", exc)
+        return
 
-    bot = Bot(token=settings.bot_token)
+    bot = Bot(token=settings.telegram_bot_token)
     dp = Dispatcher()
 
     dp.include_router(main_router)
