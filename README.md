@@ -8,7 +8,10 @@ Elena_Ksoros_fitness_bot
    ```bash
    pip install -r requirements.txt
    ```
-2. Создать `.env` и добавить `BOT_TOKEN=...`.
+2. Скопировать пример переменных окружения и заполнить значения:
+   ```bash
+   cp .env.example .env
+   ```
 3. Запустить бота:
    ```bash
    python -m app.main
