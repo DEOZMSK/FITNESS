@@ -1,0 +1,251 @@
+"""SQLite database layer for bot domain entities."""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Iterator
+
+from app.db.configs import SEED_PRODUCTS, SEED_REVIEWS
+
+
+class Database:
+    """Thin SQLite wrapper with app-specific CRUD operations."""
+
+    def __init__(self, db_path: str = "fitness.db") -> None:
+        self.db_path = db_path
+        self._ensure_directory()
+
+    def _ensure_directory(self) -> None:
+        db_file = Path(self.db_path)
+        if db_file.parent != Path("."):
+            db_file.parent.mkdir(parents=True, exist_ok=True)
+
+    @contextmanager
+    def connection(self) -> Iterator[sqlite3.Connection]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def init_db(self) -> None:
+        """Create required schema and seed static tables."""
+        with self.connection() as conn:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    telegram_id INTEGER NOT NULL UNIQUE,
+                    username TEXT,
+                    first_name TEXT,
+                    last_name TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS diagnosis_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    session_payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS questionnaire_answers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    diagnosis_session_id INTEGER,
+                    answers_payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (diagnosis_session_id) REFERENCES diagnosis_sessions(id) ON DELETE SET NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS calculations_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    diagnosis_session_id INTEGER,
+                    calculation_payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (diagnosis_session_id) REFERENCES diagnosis_sessions(id) ON DELETE SET NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    provider_payment_id TEXT,
+                    amount INTEGER NOT NULL,
+                    currency TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    payload TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS reviews (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    author_name TEXT NOT NULL,
+                    rating INTEGER NOT NULL,
+                    text TEXT NOT NULL,
+                    is_published INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(author_name, text)
+                );
+
+                CREATE TABLE IF NOT EXISTS products (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    price INTEGER NOT NULL,
+                    currency TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            self._seed_products(conn)
+            self._seed_reviews(conn)
+
+    def upsert_user(
+        self,
+        telegram_id: int,
+        username: str | None,
+        first_name: str | None,
+        last_name: str | None,
+    ) -> int:
+        """Insert or update user and return internal user id."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO users (telegram_id, username, first_name, last_name)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(telegram_id) DO UPDATE SET
+                    username = excluded.username,
+                    first_name = excluded.first_name,
+                    last_name = excluded.last_name,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (telegram_id, username, first_name, last_name),
+            )
+            row = conn.execute(
+                "SELECT id FROM users WHERE telegram_id = ?",
+                (telegram_id,),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("Failed to upsert user")
+            return int(row["id"])
+
+    def save_diagnosis_session_and_calculation(
+        self,
+        user_id: int,
+        session_payload: dict[str, Any],
+        calculation_payload: dict[str, Any],
+    ) -> int:
+        """Persist diagnosis session and related calculation. Return session id."""
+        with self.connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO diagnosis_sessions (user_id, session_payload)
+                VALUES (?, ?)
+                """,
+                (user_id, json.dumps(session_payload, ensure_ascii=False)),
+            )
+            diagnosis_session_id = int(cursor.lastrowid)
+            conn.execute(
+                """
+                INSERT INTO calculations_history (user_id, diagnosis_session_id, calculation_payload)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    user_id,
+                    diagnosis_session_id,
+                    json.dumps(calculation_payload, ensure_ascii=False),
+                ),
+            )
+            return diagnosis_session_id
+
+    def save_full_questionnaire(
+        self,
+        user_id: int,
+        answers_payload: dict[str, Any],
+        diagnosis_session_id: int | None = None,
+    ) -> int:
+        """Persist full questionnaire answers. Return questionnaire record id."""
+        with self.connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO questionnaire_answers (user_id, diagnosis_session_id, answers_payload)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    user_id,
+                    diagnosis_session_id,
+                    json.dumps(answers_payload, ensure_ascii=False),
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def record_payment(
+        self,
+        user_id: int,
+        amount: int,
+        currency: str,
+        status: str,
+        provider_payment_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> int:
+        """Persist payment event and return payment record id."""
+        with self.connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO payments (user_id, provider_payment_id, amount, currency, status, payload)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    provider_payment_id,
+                    amount,
+                    currency,
+                    status,
+                    json.dumps(payload, ensure_ascii=False) if payload else None,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def _seed_products(self, conn: sqlite3.Connection) -> None:
+        conn.executemany(
+            """
+            INSERT INTO products (code, name, description, price, currency, is_active)
+            VALUES (:code, :name, :description, :price, :currency, :is_active)
+            ON CONFLICT(code) DO UPDATE SET
+                name = excluded.name,
+                description = excluded.description,
+                price = excluded.price,
+                currency = excluded.currency,
+                is_active = excluded.is_active
+            """,
+            SEED_PRODUCTS,
+        )
+
+    def _seed_reviews(self, conn: sqlite3.Connection) -> None:
+        conn.executemany(
+            """
+            INSERT INTO reviews (author_name, rating, text, is_published)
+            VALUES (:author_name, :rating, :text, :is_published)
+            ON CONFLICT(author_name, text) DO UPDATE SET
+                rating = excluded.rating,
+                is_published = excluded.is_published
+            """,
+            SEED_REVIEWS,
+        )
