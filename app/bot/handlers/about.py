@@ -33,15 +33,6 @@ def _about_menu_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def _diagnostics_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="💖 Поддержать донатом", callback_data="donate:start")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="start:menu")],
-        ]
-    )
-
-
 def _about_back_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="about:menu")]]
@@ -151,22 +142,6 @@ async def show_contacts(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
         text,
         reply_markup=_about_back_keyboard(),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "diag:start")
-async def show_diagnostics_intro(callback: CallbackQuery) -> None:
-    """Show diagnostics intro and donation entry point."""
-    if not callback.message:
-        await callback.answer()
-        return
-
-    await callback.message.edit_text(
-        "🧪 Фитнес-диагностика\n\n"
-        "Это стартовый этап для оценки текущего состояния и целей.\n"
-        "Если хотите поддержать проект, можно отправить донат.",
-        reply_markup=_diagnostics_keyboard(),
     )
     await callback.answer()
 
