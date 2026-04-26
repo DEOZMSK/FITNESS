@@ -10,7 +10,6 @@ from app.bot.handlers.diagnostics import show_diagnostics_menu_message
 from app.bot.keyboards import (
     BUTTON_ABOUT,
     BUTTON_CANCEL,
-    BUTTON_CONTACT,
     BUTTON_DIAGNOSTICS,
     BUTTON_HOME_MENU,
     get_contact_trainer_keyboard,
@@ -75,7 +74,7 @@ async def open_diagnostics_by_text(message: Message) -> None:
     """Open diagnostics section from reply keyboard."""
     await show_diagnostics_menu_message(message)
 
-@router.message(F.text.in_({BUTTON_CONTACT, BUTTON_CONTACT_ALT}))
+@router.message(F.text == BUTTON_CONTACT_ALT)
 async def open_contact_by_text(message: Message) -> None:
     """Open trainer contact section from reply keyboard."""
     await message.answer(build_contacts_text(), reply_markup=get_contact_trainer_keyboard())

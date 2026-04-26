@@ -40,6 +40,7 @@ async def create_invoice(message: Message, amount_rub: int) -> int:
             "telegram_user_id": message.from_user.id,
             "chat_id": message.chat.id,
             "purpose": "donation",
+            "shop_id": settings.shop_id,
         },
     )
 

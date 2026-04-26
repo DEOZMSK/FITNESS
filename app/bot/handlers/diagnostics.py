@@ -17,8 +17,13 @@ from aiogram.types import (
 from app.calculators.body_metrics import (
     bmi,
     bmi_interpretation,
+    chest_index,
+    chest_index_interpretation,
     ideal_weight,
     ideal_weight_by_body_type,
+    limb_index,
+    limb_index_interpretation,
+    somatotype,
     whr,
     whr_interpretation,
 )
@@ -44,14 +49,23 @@ def _diag_menu_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="⚡ Быстрая диагностика", callback_data="diag:quick")],
             [InlineKeyboardButton(text="📋 Полная анкета", callback_data="diag:full")],
-            [InlineKeyboardButton(text="🧮 Калькуляторы", callback_data="diag:calculators")],
-            [InlineKeyboardButton(text="🔥 Калории", callback_data="diag:calories")],
-            [InlineKeyboardButton(text="🤸 Гибкость", callback_data="diag:flexibility")],
+            [InlineKeyboardButton(text="🧮 Калькуляторы тела", callback_data="diag:calculators")],
+            [InlineKeyboardButton(text="📏 Калипер / % жира / LBM", callback_data="diag:caliper")],
+            [InlineKeyboardButton(text="🔥 Калории и БЖУ", callback_data="diag:calories")],
+            [InlineKeyboardButton(text="🤸 Тест гибкости", callback_data="diag:flexibility")],
             [InlineKeyboardButton(text="🛡️ Противопоказания", callback_data="diag:contraindications")],
+            [InlineKeyboardButton(text="🧪 Гипертрофия (beta)", callback_data="diag:hypertrophy")],
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="start:menu")],
         ]
     )
 
+
+
+def _default_fat_pct_for_sex(sex: str) -> float:
+    sex_key = sex.lower()
+    if sex_key in {"male", "m", "man", "м", "муж"}:
+        return 20.0
+    return 30.0
 
 
 def _build_quick_calculations(payload: dict[str, object]) -> dict[str, object]:
@@ -63,11 +77,18 @@ def _build_quick_calculations(payload: dict[str, object]) -> dict[str, object]:
         age = int(payload["age"])
         waist_cm = float(payload["waist_cm"])
         hips_cm = float(payload["hips_cm"])
+        chest_cm = float(payload["chest_cm"])
+        sitting_height_cm = payload.get("sitting_height_cm")
+        wrist_cm = float(payload["wrist_cm"])
 
         bmi_value = bmi(height_cm=height_cm, weight_kg=weight_kg)
         whr_value = whr(waist_cm=waist_cm, hip_cm=hips_cm)
-        bmr_value = bmr(weight_kg=weight_kg, height_cm=height_cm, age=age, sex=sex)
-        macros = bju_distribution(weight_kg=weight_kg, calories_target=round(bmr_value), goal="maintain")
+        chest_index_value = chest_index(chest_circumference_cm=chest_cm, height_cm=height_cm)
+        limb_index_value = limb_index(height_standing_cm=height_cm, height_sitting_cm=float(sitting_height_cm) if sitting_height_cm else None)
+        somatotype_value = somatotype(sex=sex, wrist_cm=wrist_cm)
+        fat_pct = _default_fat_pct_for_sex(sex)
+        bmr_value = bmr(weight_kg=weight_kg, sex=sex, body_fat_pct=fat_pct, calorie_adjustment=0)
+        macros = bju_distribution(tdc_value=round(bmr_value), protein_share=0.2, fat_share=0.3)
 
         ideal_weight_estimate = ideal_weight_by_body_type(
             height_cm=height_cm,
@@ -81,6 +102,11 @@ def _build_quick_calculations(payload: dict[str, object]) -> dict[str, object]:
             "whr": whr_value,
             "whr_status": whr_interpretation(whr_value, sex),
             "ideal_weight_kg": ideal_weight_estimate,
+            "somatotype": somatotype_value,
+            "chest_index": chest_index_value,
+            "chest_index_status": chest_index_interpretation(chest_index_value, sex),
+            "limb_index": limb_index_value,
+            "limb_index_status": limb_index_interpretation(limb_index_value),
             "bmr": bmr_value,
             "macros": macros,
         }
@@ -93,7 +119,7 @@ def _build_quick_calculations(payload: dict[str, object]) -> dict[str, object]:
 def _build_quick_report_text(payload: dict[str, object], calculations: dict[str, object]) -> str:
     ideal_weight_value = calculations.get("ideal_weight_kg")
     if isinstance(ideal_weight_value, tuple):
-        ideal_weight_text = f"{ideal_weight_value[0]}–{ideal_weight_value[1]} кг"
+        ideal_weight_text = f"{ideal_weight_value[0]}–{ideal_weight_value[2]} кг (средний ориентир: {ideal_weight_value[1]} кг)"
     else:
         ideal_weight_text = f"{ideal_weight_value} кг"
 
@@ -115,6 +141,9 @@ def _build_quick_report_text(payload: dict[str, object], calculations: dict[str,
             f"• ИМТ: {calculations.get('bmi')} ({calculations.get('bmi_status')})\n"
             f"• WHR: {calculations.get('whr')} ({calculations.get('whr_status')})\n"
             f"• Идеальный вес (оценка): {ideal_weight_text}\n"
+            f"• Тип телосложения: {calculations.get('somatotype')}\n"
+            f"• Индекс грудной клетки: {calculations.get('chest_index')} ({calculations.get('chest_index_status')})\n"
+            f"• Индекс длины конечностей: {calculations.get('limb_index')} ({calculations.get('limb_index_status')})\n"
             f"• BMR: {calculations.get('bmr')} ккал/сутки\n"
             f"• БЖУ (поддержание): Б {macros.get('protein_g')} г / "
             f"Ж {macros.get('fat_g')} г / У {macros.get('carbs_g')} г"
@@ -156,6 +185,7 @@ def _build_quick_admin_report_text(payload: dict[str, object], calculations: dic
             [
                 f"• ИМТ: {calculations.get('bmi', '—')} ({calculations.get('bmi_status', '—')})",
                 f"• WHR: {calculations.get('whr', '—')} ({calculations.get('whr_status', '—')})",
+                f"• Соматотип: {calculations.get('somatotype', '—')}",
                 f"• BMR: {calculations.get('bmr', '—')}",
             ]
         )
@@ -169,7 +199,7 @@ def _build_full_calculations(payload: dict[str, object]) -> dict[str, object]:
         weight_kg = float(payload["weight_kg"])
         age = int(payload["age"])
         bmi_value = bmi(height_cm=height_cm, weight_kg=weight_kg)
-        bmr_value = bmr(weight_kg=weight_kg, height_cm=height_cm, age=age, sex=sex)
+        bmr_value = bmr(weight_kg=weight_kg, sex=sex, body_fat_pct=_default_fat_pct_for_sex(sex), calorie_adjustment=0)
         return {
             "bmi": bmi_value,
             "bmi_status": bmi_interpretation(bmi_value, age),
@@ -258,7 +288,7 @@ def _to_blood_pressure(raw_value: str) -> tuple[int, int] | None:
     diastolic = int(match.group(2))
     if systolic <= diastolic:
         return None
-    if not (70 <= systolic <= 250 and 40 <= diastolic <= 150):
+    if not (70 <= systolic <= 260 and 40 <= diastolic <= 160):
         return None
     return systolic, diastolic
 
@@ -281,6 +311,21 @@ def _hips_confirmation_keyboard() -> InlineKeyboardMarkup:
 def _find_stop_factors(text: str) -> list[str]:
     lowered = text.casefold()
     return [factor for factor in STOP_FACTORS if factor in lowered]
+
+
+def _pressure_stop_factors(pressure_value: object) -> list[str]:
+    if not isinstance(pressure_value, str):
+        return []
+    parsed = _to_blood_pressure(pressure_value)
+    if parsed is None:
+        return []
+    systolic, diastolic = parsed
+    factors: list[str] = []
+    if systolic > 150:
+        factors.append("систолическое давление более 150")
+    if diastolic > 100:
+        factors.append("диастолическое давление более 100")
+    return factors
 
 
 async def _get_or_create_user_id(message: Message) -> int:
@@ -328,7 +373,7 @@ async def _show_diagnostics_stub(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data.in_({"diag:calculators", "diag:calories", "diag:flexibility", "diag:contraindications"}))
+@router.callback_query(F.data.in_({"diag:calculators", "diag:caliper", "diag:calories", "diag:flexibility", "diag:contraindications", "diag:hypertrophy"}))
 async def diagnostics_stub_sections(callback: CallbackQuery) -> None:
     await _show_diagnostics_stub(callback)
 
@@ -375,8 +420,8 @@ async def quick_age(message: Message, state: FSMContext) -> None:
     if value is None:
         await message.answer("Не разобрал возраст. Введите число, например: 29.")
         return
-    if not _is_in_range(value, 10, 100):
-        await message.answer("Похоже, возраст вне диапазона 10–100 лет. Попробуйте ещё раз.")
+    if not _is_in_range(value, 12, 90):
+        await message.answer("Похоже, возраст вне диапазона 12–90 лет. Попробуйте ещё раз.")
         return
     await state.update_data(age=int(value))
     await state.set_state(QuickDiagnosticsStates.waiting_for_gender)
@@ -410,8 +455,8 @@ async def quick_weight(message: Message, state: FSMContext) -> None:
     if value is None:
         await message.answer("Не разобрал вес. Введите число в кг, например: 68.")
         return
-    if not _is_in_range(value, 30, 300):
-        await message.answer("Вес должен быть в диапазоне 30–300 кг. Попробуйте ещё раз.")
+    if not _is_in_range(value, 30, 250):
+        await message.answer("Вес должен быть в диапазоне 30–250 кг. Попробуйте ещё раз.")
         return
     await state.update_data(weight_kg=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_waist)
@@ -491,8 +536,8 @@ async def quick_chest(message: Message, state: FSMContext) -> None:
     if value is None:
         await message.answer("Не разобрал грудь. Введите число в см.")
         return
-    if not _is_in_range(value, 50, 220):
-        await message.answer("Грудь должна быть в диапазоне 50–220 см. Попробуйте ещё раз.")
+    if not _is_in_range(value, 40, 200):
+        await message.answer("Грудь должна быть в диапазоне 40–200 см. Попробуйте ещё раз.")
         return
     await state.update_data(chest_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_wrist)
@@ -532,8 +577,8 @@ async def quick_sitting_height(message: Message, state: FSMContext) -> None:
     if value is None:
         await message.answer("Не разобрал рост сидя. Введите число в см или нажмите «Пропустить».")
         return
-    if not _is_in_range(value, 50, 140):
-        await message.answer("Рост сидя должен быть в диапазоне 50–140 см. Попробуйте ещё раз.")
+    if not _is_in_range(value, 50, 150):
+        await message.answer("Рост сидя должен быть в диапазоне 50–150 см. Попробуйте ещё раз.")
         return
     await state.update_data(sitting_height_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_pressure)
@@ -599,7 +644,7 @@ async def quick_health(message: Message, state: FSMContext) -> None:
     }
 
     user_id = await _get_or_create_user_id(message)
-    found_factors = _find_stop_factors(health_text)
+    found_factors = list(dict.fromkeys(_find_stop_factors(health_text) + _pressure_stop_factors(data.get("pressure"))))
     payload["stop_factors"] = found_factors
 
     calculations = _build_quick_calculations(payload)
