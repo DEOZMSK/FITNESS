@@ -27,6 +27,7 @@ from app.bot.keyboards import (
     BUTTON_VIEW_RESULTS,
     BUTTON_YES,
     get_contact_trainer_keyboard,
+    get_instagram_dm_keyboard,
     get_existing_profile_actions_keyboard,
     get_main_menu_keyboard,
     get_post_diagnostics_keyboard,
@@ -474,7 +475,7 @@ async def q_pressure(message: Message, state: FSMContext) -> None:
     await state.set_state(QuickDiagnosticsStates.waiting_for_consultation)
     await message.answer(
         "Хотите бесплатную консультацию / задать вопрос тренеру?",
-        reply_markup=_single_col_keyboard([BUTTON_CONSULT_YES, BUTTON_CONSULT_NO, BUTTON_HOME_MENU]),
+        reply_markup=_two_col_keyboard([BUTTON_CONSULT_YES, BUTTON_CONSULT_NO]),
     )
 
 
@@ -488,7 +489,7 @@ async def q_pregnancy(message: Message, state: FSMContext) -> None:
     await state.set_state(QuickDiagnosticsStates.waiting_for_consultation)
     await message.answer(
         "Хотите бесплатную консультацию / задать вопрос тренеру?",
-        reply_markup=_single_col_keyboard([BUTTON_CONSULT_YES, BUTTON_CONSULT_NO, BUTTON_HOME_MENU]),
+        reply_markup=_two_col_keyboard([BUTTON_CONSULT_YES, BUTTON_CONSULT_NO]),
     )
 
 
@@ -498,7 +499,16 @@ async def q_consult(message: Message, state: FSMContext) -> None:
     if txt not in {BUTTON_CONSULT_YES, BUTTON_CONSULT_NO}:
         await message.answer("Пожалуйста, выберите вариант кнопкой.")
         return
-    await state.update_data(wants_consultation=txt == BUTTON_CONSULT_YES)
+
+    wants_consultation = txt == BUTTON_CONSULT_YES
+    await state.update_data(wants_consultation=wants_consultation)
+
+    if wants_consultation:
+        await message.answer(
+            "Откройте direct по кнопке ниже и напишите ваш вопрос.",
+            reply_markup=get_instagram_dm_keyboard(),
+        )
+
     await _finish_diagnostics(message, state)
 
 
@@ -665,7 +675,8 @@ async def _finish_diagnostics(message: Message, state: FSMContext) -> None:
     )
     db.save_calculation_history(user_id, "unified_diagnostics", payload)
 
-    await message.answer("Данные сохранены. Теперь можно посмотреть итоговый отчёт.", reply_markup=get_post_diagnostics_keyboard())
+    await message.answer(report_text, reply_markup=get_contact_trainer_keyboard())
+    await message.answer("Данные сохранены. Меню результатов:", reply_markup=get_post_diagnostics_keyboard())
     await state.clear()
 
     admin_text = _build_admin_report(message, profile, payload)

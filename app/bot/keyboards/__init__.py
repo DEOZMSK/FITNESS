@@ -1,6 +1,13 @@
 """Keyboards package."""
 
-from .contact_cta import CONTACT_TRAINER_TEXT, CONTACT_TRAINER_URL, get_contact_trainer_keyboard
+from .contact_cta import (
+    CONTACT_TRAINER_TEXT,
+    CONTACT_TRAINER_URL,
+    INSTAGRAM_DM_TEXT,
+    INSTAGRAM_DM_URL,
+    get_contact_trainer_keyboard,
+    get_instagram_dm_keyboard,
+)
 from .main_menu import (
     BUTTON_ABOUT,
     BUTTON_CONSULT_NO,
@@ -29,8 +36,11 @@ from .navigation import BUTTON_BACK, BUTTON_CANCEL, BUTTON_HOME_MENU, BUTTON_SKI
 
 __all__ = (
     "get_contact_trainer_keyboard",
+    "get_instagram_dm_keyboard",
     "CONTACT_TRAINER_URL",
     "CONTACT_TRAINER_TEXT",
+    "INSTAGRAM_DM_URL",
+    "INSTAGRAM_DM_TEXT",
     "BUTTON_ABOUT",
     "BUTTON_BACK",
     "BUTTON_CANCEL",
