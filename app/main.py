@@ -24,7 +24,7 @@ async def main() -> None:
         logging.error("Failed to start bot: %s", exc)
         return
 
-    database = Database()
+    database = Database(db_path=settings.database_path)
     database.init_db()
 
     bot = Bot(
