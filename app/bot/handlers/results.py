@@ -88,11 +88,16 @@ async def show_latest_results(message: Message) -> None:
 
     payload = latest_result.get("session_payload", {})
     calculations = latest_result.get("calculation_payload", {})
-    text = _build_results_text(
-        payload=payload if isinstance(payload, dict) else {},
-        calculations=calculations if isinstance(calculations, dict) else {},
-        created_at=latest_result.get("session_created_at"),
-    )
+    saved_user_report_text = latest_result.get("user_report_text")
+    if isinstance(saved_user_report_text, str) and saved_user_report_text.strip():
+        date_line = f"📅 Дата: {_format_created_at(latest_result.get('session_created_at'))}"
+        text = f"📊 <b>Ваши последние результаты</b>\n{date_line}\n\n{saved_user_report_text}"
+    else:
+        text = _build_results_text(
+            payload=payload if isinstance(payload, dict) else {},
+            calculations=calculations if isinstance(calculations, dict) else {},
+            created_at=latest_result.get("session_created_at"),
+        )
     await message.answer(text, reply_markup=_results_actions_keyboard())
 
 

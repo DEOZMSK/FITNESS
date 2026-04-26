@@ -56,6 +56,8 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     session_payload TEXT NOT NULL,
+                    user_report_text TEXT,
+                    admin_report_text TEXT,
                     lead_sent INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -125,6 +127,18 @@ class Database:
             )
             self._ensure_column(
                 conn=conn,
+                table_name="diagnosis_sessions",
+                column_name="user_report_text",
+                column_sql="user_report_text TEXT",
+            )
+            self._ensure_column(
+                conn=conn,
+                table_name="diagnosis_sessions",
+                column_name="admin_report_text",
+                column_sql="admin_report_text TEXT",
+            )
+            self._ensure_column(
+                conn=conn,
                 table_name="questionnaire_answers",
                 column_name="lead_sent",
                 column_sql="lead_sent INTEGER NOT NULL DEFAULT 1",
@@ -172,16 +186,30 @@ class Database:
         user_id: int,
         session_payload: dict[str, Any],
         calculation_payload: dict[str, Any],
+        user_report_text: str | None = None,
+        admin_report_text: str | None = None,
         lead_sent: bool = True,
     ) -> int:
         """Persist diagnosis session and related calculation. Return session id."""
         with self.connection() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO diagnosis_sessions (user_id, session_payload, lead_sent)
-                VALUES (?, ?, ?)
+                INSERT INTO diagnosis_sessions (
+                    user_id,
+                    session_payload,
+                    user_report_text,
+                    admin_report_text,
+                    lead_sent
+                )
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (user_id, json.dumps(session_payload, ensure_ascii=False), int(lead_sent)),
+                (
+                    user_id,
+                    json.dumps(session_payload, ensure_ascii=False),
+                    user_report_text,
+                    admin_report_text,
+                    int(lead_sent),
+                ),
             )
             diagnosis_session_id = int(cursor.lastrowid)
             conn.execute(
@@ -205,6 +233,8 @@ class Database:
                 SELECT
                     ds.id AS diagnosis_session_id,
                     ds.session_payload AS session_payload,
+                    ds.user_report_text AS user_report_text,
+                    ds.admin_report_text AS admin_report_text,
                     ds.created_at AS session_created_at,
                     ch.calculation_payload AS calculation_payload,
                     ch.created_at AS calculation_created_at
@@ -235,6 +265,8 @@ class Database:
             return {
                 "diagnosis_session_id": int(row["diagnosis_session_id"]),
                 "session_payload": session_payload,
+                "user_report_text": row["user_report_text"],
+                "admin_report_text": row["admin_report_text"],
                 "session_created_at": row["session_created_at"],
                 "calculation_payload": calculation_payload,
                 "calculation_created_at": row["calculation_created_at"],
