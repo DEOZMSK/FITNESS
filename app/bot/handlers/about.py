@@ -37,6 +37,24 @@ def _about_back_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+
+def build_contacts_text() -> str:
+    return (
+        "📞 <b>Контакты</b>\n\n"
+        f"{trainer_profile['contacts']}\n\n"
+        "🌐 <b>Соцсети</b>\n"
+        f"{trainer_profile['social']}"
+    )
+
+
+async def show_about_menu_message(message: Message) -> None:
+    """Show about menu from reply keyboard command."""
+    await message.answer(
+        "Раздел «Обо мне». Выберите, что показать:",
+        reply_markup=_about_menu_keyboard(),
+    )
+
+
 @router.callback_query(F.data == "about:menu")
 async def show_about_menu(callback: CallbackQuery) -> None:
     """Show about menu with profile/services/reviews/contacts sections."""
@@ -130,15 +148,8 @@ async def show_contacts(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    text = (
-        "📞 <b>Контакты</b>\n\n"
-        f"{trainer_profile['contacts']}\n\n"
-        "🌐 <b>Соцсети</b>\n"
-        f"{trainer_profile['social']}"
-    )
-
     await callback.message.edit_text(
-        text,
+        build_contacts_text(),
         reply_markup=_about_back_keyboard(),
     )
     await callback.answer()
