@@ -79,10 +79,43 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     diagnosis_session_id INTEGER,
+                    calculation_type TEXT,
                     calculation_payload TEXT NOT NULL,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                     FOREIGN KEY (diagnosis_session_id) REFERENCES diagnosis_sessions(id) ON DELETE SET NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS user_diagnostic_profiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL UNIQUE,
+                    telegram_id INTEGER NOT NULL UNIQUE,
+                    username TEXT,
+                    first_name TEXT,
+                    full_name TEXT,
+                    sex TEXT,
+                    age INTEGER,
+                    height_cm REAL,
+                    weight_kg REAL,
+                    waist_cm REAL,
+                    hips_cm REAL,
+                    chest_cm REAL,
+                    wrist_cm REAL,
+                    sitting_height_cm REAL,
+                    goal TEXT,
+                    health_notes TEXT,
+                    activity_level TEXT,
+                    meals_count INTEGER,
+                    known_fat_percent REAL,
+                    contraindications_payload TEXT,
+                    flexibility_payload TEXT,
+                    caliper_payload TEXT,
+                    latest_body_metrics_payload TEXT,
+                    latest_calories_payload TEXT,
+                    latest_report_text TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS payments (
@@ -143,6 +176,12 @@ class Database:
                 table_name="questionnaire_answers",
                 column_name="lead_sent",
                 column_sql="lead_sent INTEGER NOT NULL DEFAULT 1",
+            )
+            self._ensure_column(
+                conn=conn,
+                table_name="calculations_history",
+                column_name="calculation_type",
+                column_sql="calculation_type TEXT",
             )
             self._ensure_column(
                 conn=conn,
@@ -225,6 +264,132 @@ class Database:
                 ),
             )
             return diagnosis_session_id
+
+    def save_calculation_history(
+        self,
+        user_id: int,
+        calculation_type: str,
+        payload: dict[str, Any],
+        diagnosis_session_id: int | None = None,
+    ) -> int:
+        with self.connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO calculations_history (user_id, diagnosis_session_id, calculation_type, calculation_payload)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    diagnosis_session_id,
+                    calculation_type,
+                    json.dumps(payload, ensure_ascii=False),
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def upsert_diagnostic_profile(self, user: dict[str, Any], data: dict[str, Any]) -> None:
+        with self.connection() as conn:
+            merged = {**user, **data}
+            conn.execute(
+                """
+                INSERT INTO user_diagnostic_profiles (
+                    user_id, telegram_id, username, first_name, full_name, sex, age, height_cm, weight_kg,
+                    waist_cm, hips_cm, chest_cm, wrist_cm, sitting_height_cm, goal, health_notes,
+                    activity_level, meals_count, known_fat_percent, contraindications_payload, flexibility_payload,
+                    caliper_payload, latest_body_metrics_payload, latest_calories_payload, latest_report_text
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(telegram_id) DO UPDATE SET
+                    user_id=excluded.user_id,
+                    username=excluded.username,
+                    first_name=excluded.first_name,
+                    full_name=excluded.full_name,
+                    sex=COALESCE(excluded.sex, user_diagnostic_profiles.sex),
+                    age=COALESCE(excluded.age, user_diagnostic_profiles.age),
+                    height_cm=COALESCE(excluded.height_cm, user_diagnostic_profiles.height_cm),
+                    weight_kg=COALESCE(excluded.weight_kg, user_diagnostic_profiles.weight_kg),
+                    waist_cm=COALESCE(excluded.waist_cm, user_diagnostic_profiles.waist_cm),
+                    hips_cm=COALESCE(excluded.hips_cm, user_diagnostic_profiles.hips_cm),
+                    chest_cm=COALESCE(excluded.chest_cm, user_diagnostic_profiles.chest_cm),
+                    wrist_cm=COALESCE(excluded.wrist_cm, user_diagnostic_profiles.wrist_cm),
+                    sitting_height_cm=COALESCE(excluded.sitting_height_cm, user_diagnostic_profiles.sitting_height_cm),
+                    goal=COALESCE(excluded.goal, user_diagnostic_profiles.goal),
+                    health_notes=COALESCE(excluded.health_notes, user_diagnostic_profiles.health_notes),
+                    activity_level=COALESCE(excluded.activity_level, user_diagnostic_profiles.activity_level),
+                    meals_count=COALESCE(excluded.meals_count, user_diagnostic_profiles.meals_count),
+                    known_fat_percent=COALESCE(excluded.known_fat_percent, user_diagnostic_profiles.known_fat_percent),
+                    contraindications_payload=COALESCE(excluded.contraindications_payload, user_diagnostic_profiles.contraindications_payload),
+                    flexibility_payload=COALESCE(excluded.flexibility_payload, user_diagnostic_profiles.flexibility_payload),
+                    caliper_payload=COALESCE(excluded.caliper_payload, user_diagnostic_profiles.caliper_payload),
+                    latest_body_metrics_payload=COALESCE(excluded.latest_body_metrics_payload, user_diagnostic_profiles.latest_body_metrics_payload),
+                    latest_calories_payload=COALESCE(excluded.latest_calories_payload, user_diagnostic_profiles.latest_calories_payload),
+                    latest_report_text=COALESCE(excluded.latest_report_text, user_diagnostic_profiles.latest_report_text),
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (
+                    merged.get("user_id"),
+                    merged.get("telegram_id"),
+                    merged.get("username"),
+                    merged.get("first_name"),
+                    merged.get("full_name"),
+                    merged.get("sex"),
+                    merged.get("age"),
+                    merged.get("height_cm"),
+                    merged.get("weight_kg"),
+                    merged.get("waist_cm"),
+                    merged.get("hips_cm"),
+                    merged.get("chest_cm"),
+                    merged.get("wrist_cm"),
+                    merged.get("sitting_height_cm"),
+                    merged.get("goal"),
+                    merged.get("health_notes"),
+                    merged.get("activity_level"),
+                    merged.get("meals_count"),
+                    merged.get("known_fat_percent"),
+                    json.dumps(merged.get("contraindications_payload"), ensure_ascii=False) if merged.get("contraindications_payload") is not None else None,
+                    json.dumps(merged.get("flexibility_payload"), ensure_ascii=False) if merged.get("flexibility_payload") is not None else None,
+                    json.dumps(merged.get("caliper_payload"), ensure_ascii=False) if merged.get("caliper_payload") is not None else None,
+                    json.dumps(merged.get("latest_body_metrics_payload"), ensure_ascii=False) if merged.get("latest_body_metrics_payload") is not None else None,
+                    json.dumps(merged.get("latest_calories_payload"), ensure_ascii=False) if merged.get("latest_calories_payload") is not None else None,
+                    merged.get("latest_report_text"),
+                ),
+            )
+
+    def get_diagnostic_profile_by_telegram_id(self, telegram_id: int) -> dict[str, Any] | None:
+        with self.connection() as conn:
+            row = conn.execute("SELECT * FROM user_diagnostic_profiles WHERE telegram_id = ?", (telegram_id,)).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        for key in (
+            "contraindications_payload",
+            "flexibility_payload",
+            "caliper_payload",
+            "latest_body_metrics_payload",
+            "latest_calories_payload",
+        ):
+            raw = result.get(key)
+            result[key] = json.loads(raw) if isinstance(raw, str) and raw else None
+        return result
+
+    def get_latest_profile_or_none(self, telegram_id: int) -> dict[str, Any] | None:
+        return self.get_diagnostic_profile_by_telegram_id(telegram_id)
+
+    def update_diagnostic_profile_fields(self, telegram_id: int, fields: dict[str, Any]) -> None:
+        if not fields:
+            return
+        encoded_fields: dict[str, Any] = {}
+        for key, value in fields.items():
+            if key.endswith("_payload") and value is not None and not isinstance(value, str):
+                encoded_fields[key] = json.dumps(value, ensure_ascii=False)
+            else:
+                encoded_fields[key] = value
+        set_clause = ", ".join(f"{field} = ?" for field in encoded_fields)
+        values = list(encoded_fields.values()) + [telegram_id]
+        with self.connection() as conn:
+            conn.execute(
+                f"UPDATE user_diagnostic_profiles SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE telegram_id = ?",
+                values,
+            )
 
     def get_latest_diagnosis_result(self, user_id: int) -> dict[str, Any] | None:
         """Return latest diagnosis session with related calculation payload."""

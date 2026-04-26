@@ -3,21 +3,20 @@
 from .contact_cta import CONTACT_TRAINER_TEXT, CONTACT_TRAINER_URL, get_contact_trainer_keyboard
 from .main_menu import (
     BUTTON_ABOUT,
+    BUTTON_BODY_CALC,
+    BUTTON_CALIPER,
+    BUTTON_CALORIES,
+    BUTTON_CONTRAINDICATIONS,
     BUTTON_CONTACT,
     BUTTON_DIAGNOSTICS,
-    BUTTON_RESULTS,
+    BUTTON_FINAL_REPORT,
+    BUTTON_FLEXIBILITY,
+    BUTTON_MY_DATA,
+    BUTTON_PROFILE_START,
     get_diagnostics_menu_keyboard,
     get_main_menu_keyboard,
 )
-from .navigation import (
-    BUTTON_BACK,
-    BUTTON_CANCEL,
-    BUTTON_HOME_MENU,
-    BUTTON_SKIP,
-    get_scenario_my_data_keyboard,
-    get_scenario_nav_keyboard,
-    get_scenario_skip_keyboard,
-)
+from .navigation import BUTTON_BACK, BUTTON_CANCEL, BUTTON_HOME_MENU, BUTTON_SKIP, get_scenario_skip_keyboard
 
 __all__ = (
     "get_contact_trainer_keyboard",
@@ -25,15 +24,20 @@ __all__ = (
     "CONTACT_TRAINER_TEXT",
     "BUTTON_ABOUT",
     "BUTTON_BACK",
+    "BUTTON_BODY_CALC",
+    "BUTTON_CALIPER",
+    "BUTTON_CALORIES",
     "BUTTON_CANCEL",
+    "BUTTON_CONTRAINDICATIONS",
     "BUTTON_CONTACT",
     "BUTTON_DIAGNOSTICS",
+    "BUTTON_FINAL_REPORT",
+    "BUTTON_FLEXIBILITY",
     "BUTTON_HOME_MENU",
-    "BUTTON_RESULTS",
+    "BUTTON_MY_DATA",
+    "BUTTON_PROFILE_START",
     "BUTTON_SKIP",
-    "get_scenario_my_data_keyboard",
     "get_diagnostics_menu_keyboard",
     "get_main_menu_keyboard",
-    "get_scenario_nav_keyboard",
     "get_scenario_skip_keyboard",
 )
