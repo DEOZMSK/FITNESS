@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Iterable, Optional
 
 GAP_STATUS = "Пограничное значение, нужна дополнительная оценка"
 WHR_NEUTRAL_STATUS = "Показатель находится около пограничного значения, лучше оценивать его вместе с другими замерами."
 
 SEX_ALIASES = {
-    "male": {"male", "m", "man", "м", "муж"},
-    "female": {"female", "f", "woman", "ж", "жен"},
+    "male": {"male", "m", "man", "м", "муж", "мужчина", "мужской", "парень"},
+    "female": {"female", "f", "woman", "ж", "жен", "женщина", "женский", "девушка"},
 }
 
 BODY_TYPE_ALIASES = {
@@ -87,8 +88,14 @@ def bmi_interpretation(bmi_value: float, age: int) -> str:
     return "Возраст вне диапазона 18–45 для этой шкалы; нужна дополнительная оценка"
 
 
-def _normalize_sex(sex: str) -> str:
-    sex_key = sex.lower()
+def _normalize_sex(sex: str | None) -> str:
+    if sex is None:
+        raise ValueError("Unknown sex")
+    sex_key = str(sex).strip().lower()
+    if not sex_key:
+        raise ValueError("Unknown sex")
+    # Strip emoji and punctuation to support labels like "👨 Мужчина", "♀️ Женщина".
+    sex_key = re.sub(r"[^a-zа-яё]+", " ", sex_key).strip()
     if sex_key in SEX_ALIASES["male"]:
         return "male"
     if sex_key in SEX_ALIASES["female"]:

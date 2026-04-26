@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
@@ -50,6 +52,7 @@ from app.config import load_settings
 from app.db import Database
 
 router = Router(name=__name__)
+logger = logging.getLogger(__name__)
 
 GOALS = [
     "Похудеть",
@@ -131,7 +134,16 @@ def _safe_number(v: float | None) -> str:
 
 
 def _normalize_sex(sex_text: str) -> str:
-    return "женщина" if sex_text == BUTTON_SEX_WOMAN else "мужчина"
+    normalized = (sex_text or "").strip().lower()
+    if normalized in {"female", "женщина", "жен", "женский", "♀️ женщина"}:
+        return "female"
+    if normalized in {"male", "мужчина", "муж", "мужской", "👨 мужчина"}:
+        return "male"
+    raise ValueError("Unknown sex")
+
+
+def _sex_label(sex_value: str | None) -> str:
+    return "Женщина" if sex_value == "female" else "Мужчина"
 
 
 async def _user_context(message: Message) -> tuple[Database, int]:
@@ -226,7 +238,7 @@ async def q_name(message: Message, state: FSMContext) -> None:
 @router.message(QuickDiagnosticsStates.waiting_for_sex)
 async def q_sex(message: Message, state: FSMContext) -> None:
     txt = (message.text or "").strip()
-    if txt not in {BUTTON_SEX_WOMAN, BUTTON_SEX_MAN}:
+    if txt not in {BUTTON_SEX_WOMAN, BUTTON_SEX_MAN, "♀️ Женщина", "👨 Мужчина"}:
         await message.answer("Пожалуйста, выберите вариант кнопкой.")
         return
     await state.update_data(sex=_normalize_sex(txt))
@@ -554,7 +566,7 @@ def _build_report_text(profile: dict, payload: dict) -> str:
         "",
         "👤 <b>Ваши данные:</b>",
         f"Имя: {profile.get('full_name') or '—'}",
-        f"Пол: {profile.get('sex') or '—'}",
+        f"Пол: {_sex_label(profile.get('sex')) if profile.get('sex') else '—'}",
         f"Возраст: {profile.get('age') or '—'}",
         f"Рост: {_safe_number(profile.get('height_cm'))} см",
         f"Вес: {_safe_number(profile.get('weight_kg'))} кг",
@@ -608,7 +620,7 @@ def _build_admin_report(message: Message, profile: dict, payload: dict) -> str:
         f"Telegram: {username}\n"
         f"User ID: {message.from_user.id}\n\n"
         "Данные:\n"
-        f"Пол: {profile.get('sex') or '—'}\n"
+        f"Пол: {_sex_label(profile.get('sex')) if profile.get('sex') else '—'}\n"
         f"Возраст: {profile.get('age') or '—'}\n"
         f"Рост/вес: {_safe_number(profile.get('height_cm'))} / {_safe_number(profile.get('weight_kg'))}\n"
         f"Талия/бёдра: {_safe_number(profile.get('waist_cm'))} / {_safe_number(profile.get('hips_cm'))}\n"
@@ -651,7 +663,18 @@ async def _finish_diagnostics(message: Message, state: FSMContext) -> None:
         "pregnancy_status": raw.get("pregnancy_status"),
         "wants_consultation": raw.get("wants_consultation"),
     }
-    payload = _calculate_payload(profile)
+    try:
+        payload = _calculate_payload(profile)
+    except ValueError as exc:
+        if "Unknown sex" in str(exc):
+            logger.warning("Unknown sex value in diagnostics profile: %r", profile.get("sex"))
+            await state.set_state(QuickDiagnosticsStates.waiting_for_sex)
+            await message.answer(
+                "Не удалось определить пол. Пожалуйста, выберите пол ещё раз.",
+                reply_markup=_two_col_keyboard([BUTTON_SEX_WOMAN, BUTTON_SEX_MAN]),
+            )
+            return
+        raise
     report_text = _build_report_text(profile, payload)
 
     db, user_id = await _user_context(message)
@@ -697,7 +720,7 @@ async def show_my_data(message: Message) -> None:
     text = (
         "👤 Ваши данные:\n"
         f"Имя: {profile.get('full_name') or '—'}\n"
-        f"Пол: {profile.get('sex') or '—'}\n"
+        f"Пол: {_sex_label(profile.get('sex')) if profile.get('sex') else '—'}\n"
         f"Возраст: {profile.get('age') or '—'}\n"
         f"Рост: {_safe_number(profile.get('height_cm'))}\n"
         f"Вес: {_safe_number(profile.get('weight_kg'))}\n"
