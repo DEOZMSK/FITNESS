@@ -144,6 +144,30 @@ def _build_quick_report_text(payload: dict[str, object], calculations: dict[str,
     return "\n\n".join([user_data_block, calculations_block, warning_block, discussion_block, cta_block])
 
 
+def _build_quick_admin_report_text(payload: dict[str, object], calculations: dict[str, object]) -> str:
+    lines = [
+        "🧪 Быстрая диагностика",
+        f"• Имя: {payload.get('name', '—')}",
+        f"• Возраст: {payload.get('age', '—')}",
+        f"• Пол: {payload.get('gender', '—')}",
+        f"• Рост/вес: {payload.get('height_cm', '—')} / {payload.get('weight_kg', '—')}",
+        f"• Цель: {payload.get('goal', '—')}",
+        f"• Здоровье: {payload.get('health', '—')}",
+        f"• Стоп-факторы: {', '.join(payload.get('stop_factors', [])) or 'нет'}",
+    ]
+    if calculations.get("status") == "failed":
+        lines.append("• Расчёты: не удалось рассчитать автоматически")
+    else:
+        lines.extend(
+            [
+                f"• ИМТ: {calculations.get('bmi', '—')} ({calculations.get('bmi_status', '—')})",
+                f"• WHR: {calculations.get('whr', '—')} ({calculations.get('whr_status', '—')})",
+                f"• BMR: {calculations.get('bmr', '—')}",
+            ]
+        )
+    return "\n".join(lines)
+
+
 def _build_full_calculations(payload: dict[str, object]) -> dict[str, object]:
     try:
         sex = str(payload.get("gender", ""))
@@ -193,6 +217,32 @@ def _build_full_report_text(payload: dict[str, object], calculations: dict[str, 
         "Можно мягко перейти к следующему шагу: тренер поможет адаптировать план под ваш ритм жизни."
     )
     return "\n\n".join([user_data_block, calculations_block, warning_block, discussion_block, cta_block])
+
+
+def _build_full_admin_report_text(payload: dict[str, object], calculations: dict[str, object]) -> str:
+    lines = [
+        "📋 Полная анкета",
+        f"• Имя: {payload.get('name', '—')}",
+        f"• Возраст: {payload.get('age', '—')}",
+        f"• Пол: {payload.get('gender', '—')}",
+        f"• Город: {payload.get('city', '—')}",
+        f"• Цель: {payload.get('goal', '—')}",
+        f"• Хронические: {payload.get('chronic_conditions', '—')}",
+        f"• Травмы: {payload.get('injuries', '—')}",
+        f"• Медикаменты: {payload.get('medications', '—')}",
+        f"• Стоп-факторы: {', '.join(payload.get('stop_factors', [])) or 'нет'}",
+    ]
+    if calculations.get("status") == "failed":
+        lines.append("• Расчёты: недостаточно данных")
+    else:
+        lines.extend(
+            [
+                f"• ИМТ: {calculations.get('bmi', '—')} ({calculations.get('bmi_status', '—')})",
+                f"• Идеальный вес: {calculations.get('ideal_weight_kg', '—')}",
+                f"• BMR: {calculations.get('bmr', '—')}",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def _to_number(raw_value: str) -> float | None:
@@ -544,12 +594,16 @@ async def quick_health(message: Message, state: FSMContext) -> None:
 
     calculations = _build_quick_calculations(payload)
     calculation_payload = {"status": "stopped" if found_factors else "completed", **calculations}
+    user_report_text = _build_quick_report_text(payload=payload, calculations=calculations)
+    admin_report_text = _build_quick_admin_report_text(payload=payload, calculations=calculation_payload)
 
     db = Database()
     diagnosis_session_id = db.save_diagnosis_session_and_calculation(
         user_id=user_id,
         session_payload=payload,
         calculation_payload=calculation_payload,
+        user_report_text=user_report_text,
+        admin_report_text=admin_report_text,
     )
 
     try:
@@ -569,8 +623,7 @@ async def quick_health(message: Message, state: FSMContext) -> None:
         await message.answer(SAFE_STOP_MESSAGE, reply_markup=get_main_menu_keyboard())
         return
 
-    report_text = _build_quick_report_text(payload=payload, calculations=calculations)
-    await message.answer(report_text, reply_markup=_diagnostics_cta_keyboard())
+    await message.answer(user_report_text, reply_markup=_diagnostics_cta_keyboard())
     await message.answer(
         "Спасибо! Отчёт готов — можете обсудить его с тренером или вернуться в меню.",
         reply_markup=_diagnostics_cta_keyboard(),
@@ -756,12 +809,23 @@ async def finish_full_questionnaire(message: Message, state: FSMContext) -> None
     found_factors = _find_stop_factors(risk_source_text)
     payload["stop_factors"] = found_factors
     calculations = _build_full_calculations(payload)
+    calculation_payload = {"status": "stopped" if found_factors else "completed", **calculations}
+    user_report_text = _build_full_report_text(payload=payload, calculations=calculations)
+    admin_report_text = _build_full_admin_report_text(payload=payload, calculations=calculation_payload)
 
     user_id = await _get_or_create_user_id(message)
     db = Database()
+    diagnosis_session_id = db.save_diagnosis_session_and_calculation(
+        user_id=user_id,
+        session_payload=payload,
+        calculation_payload=calculation_payload,
+        user_report_text=user_report_text,
+        admin_report_text=admin_report_text,
+    )
     questionnaire_id = db.save_full_questionnaire(
         user_id=user_id,
-        answers_payload={**payload, "calculations": calculations},
+        answers_payload={**payload, "calculations": calculation_payload},
+        diagnosis_session_id=diagnosis_session_id,
     )
 
     try:
@@ -781,8 +845,7 @@ async def finish_full_questionnaire(message: Message, state: FSMContext) -> None
         await message.answer(SAFE_STOP_MESSAGE, reply_markup=get_main_menu_keyboard())
         return
 
-    report_text = _build_full_report_text(payload=payload, calculations=calculations)
-    await message.answer(report_text, reply_markup=_diagnostics_cta_keyboard())
+    await message.answer(user_report_text, reply_markup=_diagnostics_cta_keyboard())
     await message.answer(
         "Спасибо! Полная анкета обработана, отчёт готов.",
         reply_markup=_diagnostics_cta_keyboard(),
