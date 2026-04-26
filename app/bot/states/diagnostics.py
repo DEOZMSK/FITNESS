@@ -16,5 +16,7 @@ class QuickDiagnosticsStates(StatesGroup):
     waiting_for_chest = State()
     waiting_for_wrist = State()
     waiting_for_sitting_height = State()
+    waiting_for_pressure = State()
+    waiting_for_hips_confirmation = State()
     waiting_for_goal = State()
     waiting_for_health = State()
