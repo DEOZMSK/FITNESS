@@ -108,6 +108,55 @@ def bju_distribution(
     }
 
 
+def bmr_mifflin_st_jeor(*, weight_kg: float, height_cm: float, age: int, sex: str) -> float:
+    sex_key = sex.lower().strip()
+    male = {"male", "m", "man", "м", "муж", "мужчина", "мужской"}
+    female = {"female", "f", "woman", "ж", "жен", "женщина", "женский"}
+
+    if sex_key in male:
+        return round((10 * weight_kg) + (6.25 * height_cm) - (5 * age) + 5, 2)
+    if sex_key in female:
+        return round((10 * weight_kg) + (6.25 * height_cm) - (5 * age) - 161, 2)
+    raise ValueError("Unknown sex")
+
+
+def goal_calories(*, tdee_value: float, goal_type: str) -> int:
+    if goal_type == "muscle_gain":
+        return int(round((tdee_value * 1.1) / 10) * 10)
+    if goal_type == "fat_loss":
+        return int(round((tdee_value * 0.85) / 10) * 10)
+    if goal_type == "recomposition":
+        return int(round((tdee_value * 0.95) / 10) * 10)
+    return int(round(tdee_value / 10) * 10)
+
+
+def goal_macros(*, weight_kg: float, target_calories: int, goal_type: str) -> dict[str, int]:
+    if goal_type == "muscle_gain":
+        protein = weight_kg * 1.8
+        fat = weight_kg * 0.9
+    elif goal_type == "fat_loss":
+        protein = weight_kg * 2.0
+        fat = weight_kg * 0.8
+    elif goal_type == "recomposition":
+        protein = weight_kg * 2.0
+        fat = weight_kg * 0.8
+    else:
+        protein = weight_kg * 1.6
+        fat = weight_kg * 0.9
+
+    protein_cals = protein * 4
+    fat_cals = fat * 9
+    carbs = (target_calories - protein_cals - fat_cals) / 4
+    if carbs < 30:
+        carbs = 30.0
+
+    return {
+        "protein_g": int(round(protein)),
+        "fat_g": int(round(fat)),
+        "carbs_g": int(round(carbs)),
+    }
+
+
 def per_meal(macros: dict[str, float], meals: int = 4) -> dict[str, float]:
     if meals <= 0:
         raise ValueError("meals must be > 0")

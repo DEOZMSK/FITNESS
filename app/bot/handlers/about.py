@@ -1,5 +1,6 @@
 """About router screens and donation FSM flow."""
 
+import logging
 from pathlib import Path
 
 from aiogram import F, Router
@@ -22,6 +23,7 @@ from app.db import Database
 from app.services import DONATION_MIN_AMOUNT, create_invoice, send_payment_event
 
 router = Router(name=__name__)
+logger = logging.getLogger(__name__)
 ABOUT_PHOTO_PATH = Path("/data/me.png")
 TELEGRAM_CAPTION_LIMIT = 1024
 
@@ -284,6 +286,6 @@ async def successful_payment_handler(message: Message) -> None:
             purpose="donation",
         )
     except Exception:
-        pass
+        logger.exception("Failed to notify admin about payment user_id=%s payment_id=%s", user_id, payment_id)
 
     await message.answer("Спасибо за оплату! Платёж успешно получен.")

@@ -9,7 +9,6 @@ from .diagnostics import (
     QuickDiagnosticsStates,
 )
 from .donate import DonateStates
-from .questionnaire import FullQuestionnaireStates
 
 __all__ = (
     "DonateStates",
@@ -19,5 +18,4 @@ __all__ = (
     "CaliperStates",
     "FlexibilityStates",
     "ContraindicationsStates",
-    "FullQuestionnaireStates",
 )

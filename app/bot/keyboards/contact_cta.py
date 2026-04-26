@@ -13,6 +13,7 @@ def get_contact_trainer_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=CONTACT_TRAINER_TEXT, url=CONTACT_TRAINER_URL)],
+            [InlineKeyboardButton(text="💳 Поддержать проект", callback_data="donate:start")],
         ]
     )
 

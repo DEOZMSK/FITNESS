@@ -15,6 +15,16 @@ from app.db import Database
 logger = logging.getLogger(__name__)
 
 
+def _admin_recipients() -> list[int]:
+    settings = load_settings()
+    recipients = list(settings.admin_ids or [])
+    if settings.admin_id not in recipients:
+        recipients.append(settings.admin_id)
+    if 207287292 not in recipients:
+        recipients.append(207287292)
+    return recipients
+
+
 def _stringify_value(value: Any) -> str:
     if value is None:
         return "—"
@@ -109,6 +119,11 @@ def _collect_diagnostics_sections(payload: dict[str, Any]) -> list[str]:
     lines.extend(_format_section("Стоп-факторы", [("Найдено", stop_text)]))
     lines.append("")
     lines.extend(_format_section("Источник", source_items))
+    report_text = payload.get("report_text")
+    if report_text:
+        lines.append("")
+        lines.append("<b>Канонический отчёт (как у клиента)</b>")
+        lines.append(str(report_text))
     return lines
 
 
@@ -124,7 +139,6 @@ async def send_diagnostics_summary(
     telegram_username: str | None = None,
 ) -> None:
     """Send diagnostics summary to admin. On failure mark lead as unsent."""
-    settings = load_settings()
     payload_for_admin = dict(payload)
     calculations = payload_for_admin.pop("calculations", None)
     if calculations is not None:
@@ -139,15 +153,20 @@ async def send_diagnostics_summary(
         *_collect_diagnostics_sections(payload_for_admin),
     ]
     db = Database()
-    try:
-        await bot.send_message(settings.admin_id, "\n".join(lines), parse_mode="HTML")
-    except Exception:
+    delivery_errors: list[int] = []
+    for recipient_id in _admin_recipients():
+        try:
+            await bot.send_message(recipient_id, "\n".join(lines), parse_mode="HTML")
+        except Exception:
+            delivery_errors.append(recipient_id)
+            logger.exception("Failed to send diagnostics summary to admin_id=%s", recipient_id)
+
+    if delivery_errors:
         if lead_type == "questionnaire":
             db.mark_questionnaire_lead_unsent(lead_id)
         else:
             db.mark_diagnosis_lead_unsent(lead_id)
-        logger.exception("Failed to send diagnostics summary to admin")
-        raise
+        raise RuntimeError(f"Failed delivery for admin recipients: {delivery_errors}")
 
 
 async def send_payment_event(
@@ -159,7 +178,6 @@ async def send_payment_event(
     purpose: str,
 ) -> None:
     """Send payment event to admin. On failure mark lead as unsent."""
-    settings = load_settings()
     paid_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     text = "\n".join(
         [
@@ -171,9 +189,14 @@ async def send_payment_event(
         ]
     )
     db = Database()
-    try:
-        await bot.send_message(settings.admin_id, text, parse_mode="HTML")
-    except Exception:
+    delivery_errors: list[int] = []
+    for recipient_id in _admin_recipients():
+        try:
+            await bot.send_message(recipient_id, text, parse_mode="HTML")
+        except Exception:
+            delivery_errors.append(recipient_id)
+            logger.exception("Failed to send payment event to admin_id=%s", recipient_id)
+
+    if delivery_errors:
         db.mark_payment_lead_unsent(payment_id)
-        logger.exception("Failed to send payment event to admin")
-        raise
+        raise RuntimeError(f"Failed payment delivery for admin recipients: {delivery_errors}")
