@@ -1,60 +1,104 @@
-"""Skinfold (caliper) estimations."""
+"""Skinfold (caliper) estimations by coach protocol."""
 
 from __future__ import annotations
 
-from app.calculators.body_metrics import GAP_STATUS, RangeRule, classify_with_gap_status
+import math
+from typing import Literal
 
 
-AGE_RULES_MALE = (
-    RangeRule(None, 7.99, "Очень низкий % жира"),
-    RangeRule(8.0, 19.99, "Норма"),
-    RangeRule(20.0, 24.99, "Повышенный % жира"),
-    RangeRule(25.0, None, "Высокий % жира"),
-)
-
-AGE_RULES_FEMALE = (
-    RangeRule(None, 20.99, "Очень низкий % жира"),
-    RangeRule(21.0, 32.99, "Норма"),
-    RangeRule(33.0, 38.99, "Повышенный % жира"),
-    RangeRule(39.0, None, "Высокий % жира"),
-)
+def body_surface_area(height_cm: float, weight_kg: float) -> float:
+    return math.sqrt(height_cm * weight_kg / 3600)
 
 
-
-def body_fat_percent(sum_of_folds_mm: float, age: int, sex: str) -> float:
-    """Estimate body fat with Jackson-Pollock 3-site equations."""
-
-    s = sum_of_folds_mm
+def _norms_by_sex_age(sex: str, age: int) -> tuple[float, float, float] | None:
     sex_key = sex.lower()
+    male = {"male", "m", "man", "м", "муж"}
+    female = {"female", "f", "woman", "ж", "жен"}
 
-    if sex_key in {"male", "m", "man", "м", "муж"}:
-        density = 1.10938 - 0.0008267 * s + 0.0000016 * (s**2) - 0.0002574 * age
-    elif sex_key in {"female", "f", "woman", "ж", "жен"}:
-        density = 1.0994921 - 0.0009929 * s + 0.0000023 * (s**2) - 0.0001392 * age
+    if sex_key in male:
+        if 18 <= age <= 29:
+            return (8.0, 18.0, 19.0)
+        if 30 <= age <= 39:
+            return (11.0, 20.0, 26.0)
+        if 40 <= age <= 49:
+            return (13.0, 22.0, 28.0)
+        if 50 <= age <= 59:
+            return (15.0, 24.0, 30.0)
+    elif sex_key in female:
+        if 18 <= age <= 29:
+            return (20.0, 28.0, 29.0)
+        if 30 <= age <= 39:
+            return (22.0, 30.0, 30.01)
+        if 40 <= age <= 49:
+            return (24.0, 32.0, 32.01)
+        if 50 <= age <= 59:
+            return (26.0, 35.0, 35.01)
+
+    return None
+
+
+def age_interpretation(body_fat_pct: float, sex: str, age: int) -> str:
+    norms = _norms_by_sex_age(sex=sex, age=age)
+    if norms is None:
+        return "Возраст вне шкалы 18–59; нужна дополнительная оценка"
+
+    normal_low, normal_high, elevated_threshold = norms
+    if body_fat_pct < normal_low:
+        return "Ниже нормы"
+    if normal_low <= body_fat_pct <= normal_high:
+        return "Норма"
+    if normal_high < body_fat_pct < elevated_threshold:
+        return "Выше нормы / погранично"
+    return "Повышенный вес"
+
+
+def coach_caliper_estimate(
+    *,
+    sex: str,
+    age: int,
+    height_cm: float,
+    weight_kg: float,
+    forearm: float,
+    arm_front: float,
+    arm_back: float,
+    scapula: float,
+    abdomen: float,
+    thigh: float,
+    calf: float,
+    chest: float | None = None,
+) -> dict[str, float | str]:
+    sex_key = sex.lower()
+    male = {"male", "m", "man", "м", "муж"}
+    female = {"female", "f", "woman", "ж", "жен"}
+
+    bsa = body_surface_area(height_cm=height_cm, weight_kg=weight_kg)
+
+    if sex_key in female:
+        sum_folds = forearm + arm_front + arm_back + scapula + abdomen + thigh + calf
+        average_skinfold = sum_folds / 14
+    elif sex_key in male:
+        if chest is None:
+            raise ValueError("chest is required for male protocol")
+        sum_folds = forearm + arm_front + arm_back + chest + scapula + abdomen + thigh + calf
+        average_skinfold = sum_folds / 16
     else:
         raise ValueError("Unknown sex")
 
-    if density <= 0:
-        raise ValueError("Invalid skinfold values")
+    fat_mass_kg = average_skinfold * bsa * 1.3
+    fat_percent = (fat_mass_kg / weight_kg) * 100
+    lbm_kg = weight_kg - weight_kg * (fat_percent / 100)
 
-    return round((495 / density) - 450, 2)
-
+    return {
+        "sum_folds": round(sum_folds, 2),
+        "body_surface_area": round(bsa, 4),
+        "average_skinfold": round(average_skinfold, 4),
+        "fat_mass_kg": round(fat_mass_kg, 2),
+        "fat_percent": round(fat_percent, 2),
+        "lbm_kg": round(lbm_kg, 2),
+        "fat_percent_status": age_interpretation(fat_percent, sex=sex, age=age),
+        "method_note": "Оценка по калиперной методике из тренерского протокола.",
+    }
 
 
 def lean_body_mass(weight_kg: float, body_fat_pct: float) -> float:
-    """Lean body mass (LBM)."""
-
     return round(weight_kg * (1 - body_fat_pct / 100), 2)
-
-
-
-def age_interpretation(body_fat_pct: float, sex: str) -> str:
-    """Age-aware simplification (rule-based; no strict clinical scope)."""
-
-    sex_key = sex.lower()
-    if sex_key in {"male", "m", "man", "м", "муж"}:
-        return classify_with_gap_status(body_fat_pct, AGE_RULES_MALE, GAP_STATUS)
-    if sex_key in {"female", "f", "woman", "ж", "жен"}:
-        return classify_with_gap_status(body_fat_pct, AGE_RULES_FEMALE, GAP_STATUS)
-
-    raise ValueError("Unknown sex")

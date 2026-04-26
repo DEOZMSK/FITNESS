@@ -12,7 +12,6 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=BUTTON_ABOUT), KeyboardButton(text=BUTTON_DIAGNOSTICS)],
-            [KeyboardButton(text=BUTTON_RESULTS), KeyboardButton(text=BUTTON_CONTACT)],
         ],
         resize_keyboard=True,
     )
