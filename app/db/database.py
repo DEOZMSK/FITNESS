@@ -104,9 +104,14 @@ class Database:
                     sitting_height_cm REAL,
                     goal TEXT,
                     health_notes TEXT,
+                    health_limit_flag TEXT,
                     activity_level TEXT,
+                    workouts_per_week TEXT,
                     meals_count INTEGER,
                     known_fat_percent REAL,
+                    pressure_text TEXT,
+                    pregnancy_status TEXT,
+                    wants_consultation INTEGER,
                     contraindications_payload TEXT,
                     flexibility_payload TEXT,
                     caliper_payload TEXT,
@@ -191,6 +196,36 @@ class Database:
             )
             self._seed_products(conn)
             self._seed_reviews(conn)
+            self._ensure_column(
+                conn=conn,
+                table_name="user_diagnostic_profiles",
+                column_name="health_limit_flag",
+                column_sql="health_limit_flag TEXT",
+            )
+            self._ensure_column(
+                conn=conn,
+                table_name="user_diagnostic_profiles",
+                column_name="workouts_per_week",
+                column_sql="workouts_per_week TEXT",
+            )
+            self._ensure_column(
+                conn=conn,
+                table_name="user_diagnostic_profiles",
+                column_name="pressure_text",
+                column_sql="pressure_text TEXT",
+            )
+            self._ensure_column(
+                conn=conn,
+                table_name="user_diagnostic_profiles",
+                column_name="pregnancy_status",
+                column_sql="pregnancy_status TEXT",
+            )
+            self._ensure_column(
+                conn=conn,
+                table_name="user_diagnostic_profiles",
+                column_name="wants_consultation",
+                column_sql="wants_consultation INTEGER",
+            )
 
     def upsert_user(
         self,
@@ -294,10 +329,10 @@ class Database:
                 """
                 INSERT INTO user_diagnostic_profiles (
                     user_id, telegram_id, username, first_name, full_name, sex, age, height_cm, weight_kg,
-                    waist_cm, hips_cm, chest_cm, wrist_cm, sitting_height_cm, goal, health_notes,
-                    activity_level, meals_count, known_fat_percent, contraindications_payload, flexibility_payload,
+                    waist_cm, hips_cm, chest_cm, wrist_cm, sitting_height_cm, goal, health_notes, health_limit_flag,
+                    activity_level, workouts_per_week, meals_count, known_fat_percent, pressure_text, pregnancy_status, wants_consultation, contraindications_payload, flexibility_payload,
                     caliper_payload, latest_body_metrics_payload, latest_calories_payload, latest_report_text
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(telegram_id) DO UPDATE SET
                     user_id=excluded.user_id,
                     username=excluded.username,
@@ -314,9 +349,14 @@ class Database:
                     sitting_height_cm=COALESCE(excluded.sitting_height_cm, user_diagnostic_profiles.sitting_height_cm),
                     goal=COALESCE(excluded.goal, user_diagnostic_profiles.goal),
                     health_notes=COALESCE(excluded.health_notes, user_diagnostic_profiles.health_notes),
+                    health_limit_flag=COALESCE(excluded.health_limit_flag, user_diagnostic_profiles.health_limit_flag),
                     activity_level=COALESCE(excluded.activity_level, user_diagnostic_profiles.activity_level),
+                    workouts_per_week=COALESCE(excluded.workouts_per_week, user_diagnostic_profiles.workouts_per_week),
                     meals_count=COALESCE(excluded.meals_count, user_diagnostic_profiles.meals_count),
                     known_fat_percent=COALESCE(excluded.known_fat_percent, user_diagnostic_profiles.known_fat_percent),
+                    pressure_text=COALESCE(excluded.pressure_text, user_diagnostic_profiles.pressure_text),
+                    pregnancy_status=COALESCE(excluded.pregnancy_status, user_diagnostic_profiles.pregnancy_status),
+                    wants_consultation=COALESCE(excluded.wants_consultation, user_diagnostic_profiles.wants_consultation),
                     contraindications_payload=COALESCE(excluded.contraindications_payload, user_diagnostic_profiles.contraindications_payload),
                     flexibility_payload=COALESCE(excluded.flexibility_payload, user_diagnostic_profiles.flexibility_payload),
                     caliper_payload=COALESCE(excluded.caliper_payload, user_diagnostic_profiles.caliper_payload),
@@ -342,9 +382,14 @@ class Database:
                     merged.get("sitting_height_cm"),
                     merged.get("goal"),
                     merged.get("health_notes"),
+                    merged.get("health_limit_flag"),
                     merged.get("activity_level"),
+                    merged.get("workouts_per_week"),
                     merged.get("meals_count"),
                     merged.get("known_fat_percent"),
+                    merged.get("pressure_text"),
+                    merged.get("pregnancy_status"),
+                    int(bool(merged.get("wants_consultation"))) if merged.get("wants_consultation") is not None else None,
                     json.dumps(merged.get("contraindications_payload"), ensure_ascii=False) if merged.get("contraindications_payload") is not None else None,
                     json.dumps(merged.get("flexibility_payload"), ensure_ascii=False) if merged.get("flexibility_payload") is not None else None,
                     json.dumps(merged.get("caliper_payload"), ensure_ascii=False) if merged.get("caliper_payload") is not None else None,

@@ -6,12 +6,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from app.bot.handlers.about import build_contacts_text, show_about_menu_message
-from app.bot.handlers.diagnostics import show_diagnostics_menu_message
 from app.bot.keyboards import (
     BUTTON_ABOUT,
     BUTTON_CANCEL,
     BUTTON_CONTACT,
-    BUTTON_DIAGNOSTICS,
     BUTTON_HOME_MENU,
     get_contact_trainer_keyboard,
     get_main_menu_keyboard,
@@ -21,7 +19,8 @@ router = Router(name=__name__)
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message) -> None:
+async def cmd_start(message: Message, state: FSMContext) -> None:
+    await state.clear()
     await message.answer("Добро пожаловать! Выберите нужный раздел:", reply_markup=get_main_menu_keyboard())
 
 
@@ -40,11 +39,6 @@ async def cancel(message: Message, state: FSMContext) -> None:
 @router.message(F.text == BUTTON_ABOUT)
 async def open_about(message: Message) -> None:
     await show_about_menu_message(message)
-
-
-@router.message(F.text == BUTTON_DIAGNOSTICS)
-async def open_diag(message: Message) -> None:
-    await show_diagnostics_menu_message(message)
 
 
 @router.message(F.text == BUTTON_CONTACT)
