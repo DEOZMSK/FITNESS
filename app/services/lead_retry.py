@@ -39,7 +39,7 @@ async def retry_unsent_leads(bot: Bot) -> None:
                 user_id=int(lead["user_id"]),
                 lead_id=int(lead["lead_id"]),
                 payload=dict(lead.get("payload") or {}),
-                title="Повторная отправка: полная анкета",
+                title="Повторная отправка: расширенная анкета здоровья",
                 lead_type="questionnaire",
                 telegram_user_id=lead.get("telegram_user_id"),
                 telegram_username=lead.get("telegram_username"),
@@ -61,4 +61,3 @@ async def retry_unsent_leads(bot: Bot) -> None:
             db.mark_payment_lead_sent(int(payment["payment_id"]))
         except Exception:
             logger.exception("Retry failed for payment id=%s", payment.get("payment_id"))
-
