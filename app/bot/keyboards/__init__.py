@@ -14,6 +14,7 @@ from .navigation import (
     BUTTON_CANCEL,
     BUTTON_HOME_MENU,
     BUTTON_SKIP,
+    get_scenario_my_data_keyboard,
     get_scenario_nav_keyboard,
     get_scenario_skip_keyboard,
 )
@@ -30,6 +31,7 @@ __all__ = (
     "BUTTON_HOME_MENU",
     "BUTTON_RESULTS",
     "BUTTON_SKIP",
+    "get_scenario_my_data_keyboard",
     "get_diagnostics_menu_keyboard",
     "get_main_menu_keyboard",
     "get_scenario_nav_keyboard",
