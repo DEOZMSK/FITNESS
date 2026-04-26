@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 
 from app.bot.handlers import router as main_router
 from app.config import load_settings
@@ -25,7 +26,10 @@ async def main() -> None:
     database = Database()
     database.init_db()
 
-    bot = Bot(token=settings.telegram_bot_token)
+    bot = Bot(
+        token=settings.telegram_bot_token,
+        default=DefaultBotProperties(parse_mode="HTML"),
+    )
     dp = Dispatcher()
 
     dp.include_router(main_router)

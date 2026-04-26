@@ -32,7 +32,7 @@ async def send_diagnostics_summary(
     lines = [f"<b>{title}</b>", f"User ID: <code>{user_id}</code>", *_format_payload_lines(payload)]
     db = Database()
     try:
-        await bot.send_message(settings.admin_id, "\n".join(lines))
+        await bot.send_message(settings.admin_id, "\n".join(lines), parse_mode="HTML")
     except Exception:
         if lead_type == "questionnaire":
             db.mark_questionnaire_lead_unsent(lead_id)
@@ -64,7 +64,7 @@ async def send_payment_event(
     )
     db = Database()
     try:
-        await bot.send_message(settings.admin_id, text)
+        await bot.send_message(settings.admin_id, text, parse_mode="HTML")
     except Exception:
         db.mark_payment_lead_unsent(payment_id)
         logger.exception("Failed to send payment event to admin")
