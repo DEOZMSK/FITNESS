@@ -23,6 +23,7 @@ from app.services import DONATION_MIN_AMOUNT, create_invoice, send_payment_event
 
 router = Router(name=__name__)
 ABOUT_PHOTO_PATH = Path("/data/me.png")
+TELEGRAM_CAPTION_LIMIT = 1024
 
 
 def _about_back_keyboard() -> InlineKeyboardMarkup:
@@ -103,9 +104,18 @@ def _build_about_text() -> str:
 async def _send_about_profile(message: Message) -> None:
     about_text = _build_about_text()
     if ABOUT_PHOTO_PATH.exists() and ABOUT_PHOTO_PATH.is_file():
-        await message.answer_photo(
-            photo=FSInputFile(ABOUT_PHOTO_PATH),
-            caption=about_text,
+        if len(about_text) <= TELEGRAM_CAPTION_LIMIT:
+            await message.answer_photo(
+                photo=FSInputFile(ABOUT_PHOTO_PATH),
+                caption=about_text,
+                reply_markup=get_contact_trainer_keyboard(),
+                parse_mode="HTML",
+            )
+            return
+
+        await message.answer_photo(photo=FSInputFile(ABOUT_PHOTO_PATH))
+        await message.answer(
+            about_text,
             reply_markup=get_contact_trainer_keyboard(),
             parse_mode="HTML",
         )
