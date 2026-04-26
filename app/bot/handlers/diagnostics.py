@@ -81,7 +81,7 @@ def _build_quick_calculations(payload: dict[str, object]) -> dict[str, object]:
 
         calculations = {
             "bmi": bmi_value,
-            "bmi_status": bmi_interpretation(bmi_value),
+            "bmi_status": bmi_interpretation(bmi_value, age),
             "whr": whr_value,
             "whr_status": whr_interpretation(whr_value, sex),
             "ideal_weight_kg": ideal_weight_estimate,
@@ -152,7 +152,7 @@ def _build_full_calculations(payload: dict[str, object]) -> dict[str, object]:
         bmr_value = bmr(weight_kg=weight_kg, height_cm=height_cm, age=age, sex=sex)
         return {
             "bmi": bmi_value,
-            "bmi_status": bmi_interpretation(bmi_value),
+            "bmi_status": bmi_interpretation(bmi_value, age),
             "ideal_weight_kg": ideal_weight(height_cm=height_cm, sex=sex),
             "bmr": bmr_value,
         }
