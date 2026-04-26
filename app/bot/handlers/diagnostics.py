@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 
 from aiogram import F, Router
@@ -50,6 +51,7 @@ from app.db import Database
 from app.services import send_diagnostics_summary
 
 router = Router(name=__name__)
+logger = logging.getLogger(__name__)
 
 ACTIVITY_OPTIONS = {
     "Низкая активность": "1.2",
@@ -72,8 +74,21 @@ def _valid(v: float | None, lo: float, hi: float) -> bool:
     return v is not None and lo <= v <= hi
 
 
-def _norm_sex(sex: str) -> str:
-    return "мужчина" if sex.lower() in {"м", "муж", "male", "man", "мужчина"} else "женщина"
+def _normalize_sex(sex: str | None) -> str | None:
+    if sex is None:
+        return None
+    sex_key = sex.strip().lower()
+    male_values = {"м", "муж", "male", "man", "мужчина"}
+    female_values = {"ж", "жен", "female", "woman", "женщина"}
+    if sex_key in male_values:
+        return "мужчина"
+    if sex_key in female_values:
+        return "женщина"
+    return None
+
+
+def _is_skip_text(raw_text: str | None) -> bool:
+    return (raw_text or "").strip().lower() == BUTTON_SKIP.lower()
 
 
 async def _user_context(message: Message) -> tuple[Database, int]:
@@ -112,7 +127,11 @@ async def q_name(message: Message, state: FSMContext) -> None:
 
 @router.message(QuickDiagnosticsStates.waiting_for_sex)
 async def q_sex(message: Message, state: FSMContext) -> None:
-    await state.update_data(sex=_norm_sex(message.text or ""))
+    normalized_sex = _normalize_sex(message.text)
+    if normalized_sex is None:
+        await message.answer("Не понял пол. Напишите: мужчина или женщина.")
+        return
+    await state.update_data(sex=normalized_sex)
     await state.set_state(QuickDiagnosticsStates.waiting_for_age)
     await message.answer("Шаг 3/13: Возраст (12–90).")
 
@@ -228,7 +247,7 @@ async def q_health(message: Message, state: FSMContext) -> None:
     await message.answer("Шаг 12/13: Рост сидя (50–150) или Пропустить.", reply_markup=get_scenario_skip_keyboard())
 
 
-@router.message(QuickDiagnosticsStates.waiting_for_sitting_height, F.text == BUTTON_SKIP)
+@router.message(QuickDiagnosticsStates.waiting_for_sitting_height, F.text.func(_is_skip_text))
 async def q_sitting_skip(message: Message, state: FSMContext) -> None:
     await state.update_data(sitting_height_cm=None)
     await state.set_state(QuickDiagnosticsStates.waiting_for_known_fat)
@@ -246,7 +265,7 @@ async def q_sitting(message: Message, state: FSMContext) -> None:
     await message.answer("Шаг 13/13: Известный % жира (3–70) или Пропустить.", reply_markup=get_scenario_skip_keyboard())
 
 
-@router.message(QuickDiagnosticsStates.waiting_for_known_fat, F.text == BUTTON_SKIP)
+@router.message(QuickDiagnosticsStates.waiting_for_known_fat, F.text.func(_is_skip_text))
 async def q_fat_skip(message: Message, state: FSMContext) -> None:
     await state.update_data(known_fat_percent=None)
     await _finish_profile(message, state)
@@ -397,8 +416,17 @@ async def calories_meals(message: Message, state: FSMContext) -> None:
 async def _finish_calories(message: Message, state: FSMContext, profile: dict) -> None:
     db, user_id = await _user_context(message)
     known_fat = profile.get("known_fat_percent")
-    use_fat = 0.95 if known_fat is None else fat_index(float(known_fat), profile["sex"])
-    bmr_value = round((1.0 if _norm_sex(profile["sex"]) == "мужчина" else 0.9) * float(profile["weight_kg"]) * 24 * use_fat, 2)
+    normalized_sex = _normalize_sex(profile.get("sex"))
+    if normalized_sex is None:
+        logger.warning("Calories aborted due to invalid sex in profile. user_id=%s sex=%r", message.from_user.id, profile.get("sex"))
+        await state.clear()
+        await message.answer(
+            "В профиле некорректно указан пол. Пожалуйста, заново заполните шаг с полом: «🚀 Начать / обновить данные».",
+            reply_markup=get_diagnostics_menu_keyboard(),
+        )
+        return
+    use_fat = 0.95 if known_fat is None else fat_index(float(known_fat), normalized_sex)
+    bmr_value = round((1.0 if normalized_sex == "мужчина" else 0.9) * float(profile["weight_kg"]) * 24 * use_fat, 2)
     tdc_value = tdc(bmr_value, str(profile["activity_level"]))
     macros = bju_distribution(tdc_value=tdc_value)
     meals = int(profile.get("meals_count") or 4)
@@ -421,9 +449,19 @@ async def _finish_calories(message: Message, state: FSMContext, profile: dict) -
 async def caliper_start(message: Message, state: FSMContext) -> None:
     db, _ = await _user_context(message)
     profile = db.get_latest_profile_or_none(message.from_user.id)
-    if not profile or not profile.get("sex") or not profile.get("height_cm") or not profile.get("weight_kg"):
+    normalized_sex = _normalize_sex(profile.get("sex") if profile else None)
+    if not profile or normalized_sex is None or not profile.get("height_cm") or not profile.get("weight_kg"):
+        logger.info(
+            "Caliper start rejected due to incomplete profile. user_id=%s has_profile=%s sex=%r height=%r weight=%r",
+            message.from_user.id,
+            bool(profile),
+            profile.get("sex") if profile else None,
+            profile.get("height_cm") if profile else None,
+            profile.get("weight_kg") if profile else None,
+        )
         await message.answer("Для калипера нужен профиль с полом/ростом/весом.")
         return
+    profile["sex"] = normalized_sex
     await state.update_data(profile=profile, folds={})
     await state.set_state(CaliperStates.waiting_for_start)
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Продолжить", callback_data="caliper:go"), InlineKeyboardButton(text="Назад", callback_data="caliper:back")]])
@@ -449,16 +487,64 @@ async def caliper_fold(message: Message, state: FSMContext) -> None:
         await message.answer("Введите значение 1–100 мм.")
         return
     data = await state.get_data()
-    fields = data["fields"]
-    folds = data["folds"]
+    fields = data.get("fields") or []
+    folds = data.get("folds") or {}
+    profile = data.get("profile") or {}
+    if not fields:
+        logger.warning("Caliper fold state has empty fields. user_id=%s folds_len=%s", message.from_user.id, len(folds))
+        await state.clear()
+        await message.answer("Сценарий калипера сбился. Давайте начнём заново.", reply_markup=get_diagnostics_menu_keyboard())
+        return
+    if len(folds) >= len(fields):
+        logger.warning(
+            "Caliper fold index overflow prevented. user_id=%s folds_len=%s fields_len=%s",
+            message.from_user.id,
+            len(folds),
+            len(fields),
+        )
+        await state.clear()
+        await message.answer("Похоже, замеры уже заполнены. Запустите калипер ещё раз из меню.", reply_markup=get_diagnostics_menu_keyboard())
+        return
     field = fields[len(folds)]
     folds[field] = v
-    profile = data["profile"]
-    male = _norm_sex(profile["sex"]) == "мужчина"
+    normalized_sex = _normalize_sex(profile.get("sex"))
+    if normalized_sex is None:
+        logger.warning("Caliper aborted due to invalid sex in profile. user_id=%s sex=%r", message.from_user.id, profile.get("sex"))
+        await state.clear()
+        await message.answer(
+            "Не удалось определить пол в профиле. Пожалуйста, обновите профиль и выберите пол заново.",
+            reply_markup=get_diagnostics_menu_keyboard(),
+        )
+        return
+    male = normalized_sex == "мужчина"
     if len(folds) == len(fields):
         if male and "chest" not in folds:
             folds["chest"] = 10.0
-        result = coach_caliper_estimate(sex=profile["sex"], age=int(profile.get("age") or 30), height_cm=float(profile["height_cm"]), weight_kg=float(profile["weight_kg"]), **folds)
+        try:
+            result = coach_caliper_estimate(
+                sex=normalized_sex,
+                age=int(profile.get("age") or 30),
+                height_cm=float(profile["height_cm"]),
+                weight_kg=float(profile["weight_kg"]),
+                **folds,
+            )
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "Caliper estimate failed. user_id=%s sex=%r age=%r has_height=%s has_weight=%s folds_keys=%s error=%s",
+                message.from_user.id,
+                profile.get("sex"),
+                profile.get("age"),
+                bool(profile.get("height_cm")),
+                bool(profile.get("weight_kg")),
+                sorted(folds.keys()),
+                exc,
+            )
+            await state.clear()
+            await message.answer(
+                "Не удалось посчитать калипер из-за неполных данных профиля. Обновите профиль и попробуйте снова.",
+                reply_markup=get_diagnostics_menu_keyboard(),
+            )
+            return
         db, user_id = await _user_context(message)
         db.save_calculation_history(user_id, "caliper", result)
         db.update_diagnostic_profile_fields(message.from_user.id, {"caliper_payload": result, "known_fat_percent": result["fat_percent"]})
@@ -528,8 +614,16 @@ async def contraindications_answer(message: Message, state: FSMContext) -> None:
         await message.answer("Ответьте «да» или «нет».")
         return
     data = await state.get_data()
-    i = data["i"]
-    answers = data["answers"]
+    i = int(data.get("i", 0))
+    answers = data.get("answers") or []
+    if i < 0 or i >= len(QUESTIONS):
+        logger.warning("Contraindications state index is invalid. user_id=%s i=%s answers_len=%s", message.from_user.id, i, len(answers))
+        await state.clear()
+        await message.answer(
+            "Сценарий опроса сбился. Запустите раздел «Противопоказания» ещё раз.",
+            reply_markup=get_diagnostics_menu_keyboard(),
+        )
+        return
     answers.append({"q": QUESTIONS[i], "a": ans})
     i += 1
     if i >= len(QUESTIONS):

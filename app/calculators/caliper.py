@@ -12,8 +12,8 @@ def body_surface_area(height_cm: float, weight_kg: float) -> float:
 
 def _norms_by_sex_age(sex: str, age: int) -> tuple[float, float, float] | None:
     sex_key = sex.lower()
-    male = {"male", "m", "man", "м", "муж"}
-    female = {"female", "f", "woman", "ж", "жен"}
+    male = {"male", "m", "man", "м", "муж", "мужчина"}
+    female = {"female", "f", "woman", "ж", "жен", "женщина"}
 
     if sex_key in male:
         if 18 <= age <= 29:
@@ -68,8 +68,8 @@ def coach_caliper_estimate(
     chest: float | None = None,
 ) -> dict[str, float | str]:
     sex_key = sex.lower()
-    male = {"male", "m", "man", "м", "муж"}
-    female = {"female", "f", "woman", "ж", "жен"}
+    male = {"male", "m", "man", "м", "муж", "мужчина"}
+    female = {"female", "f", "woman", "ж", "жен", "женщина"}
 
     bsa = body_surface_area(height_cm=height_cm, weight_kg=weight_kg)
 
