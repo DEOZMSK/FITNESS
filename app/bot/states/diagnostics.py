@@ -20,3 +20,17 @@ class QuickDiagnosticsStates(StatesGroup):
     waiting_for_hips_confirmation = State()
     waiting_for_goal = State()
     waiting_for_health = State()
+
+
+class BodyCalculatorsStates(StatesGroup):
+    """Body calculators mini-diagnostics states."""
+
+    waiting_for_gender = State()
+    waiting_for_age = State()
+    waiting_for_height = State()
+    waiting_for_weight = State()
+    waiting_for_waist = State()
+    waiting_for_hips = State()
+    waiting_for_chest = State()
+    waiting_for_wrist = State()
+    waiting_for_sitting_height = State()

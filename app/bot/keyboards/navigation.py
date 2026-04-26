@@ -29,3 +29,14 @@ def get_scenario_skip_keyboard() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
     )
+
+
+def get_scenario_my_data_keyboard() -> ReplyKeyboardMarkup:
+    """Keyboard for flows where going back is not needed."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📊 Мои результаты"), KeyboardButton(text=BUTTON_CANCEL)],
+            [KeyboardButton(text=BUTTON_HOME_MENU)],
+        ],
+        resize_keyboard=True,
+    )

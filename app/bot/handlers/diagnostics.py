@@ -12,6 +12,7 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
+    ReplyKeyboardRemove,
 )
 
 from app.calculators.body_metrics import (
@@ -28,13 +29,14 @@ from app.calculators.body_metrics import (
     whr_interpretation,
 )
 from app.calculators.calories import bju_distribution, bmr
-from app.bot.states import FullQuestionnaireStates, QuickDiagnosticsStates
+from app.bot.states import BodyCalculatorsStates, FullQuestionnaireStates, QuickDiagnosticsStates
 from app.bot.keyboards import (
     BUTTON_BACK,
     BUTTON_SKIP,
     get_contact_trainer_keyboard,
     get_diagnostics_menu_keyboard,
     get_main_menu_keyboard,
+    get_scenario_my_data_keyboard,
     get_scenario_nav_keyboard,
     get_scenario_skip_keyboard,
 )
@@ -378,9 +380,191 @@ async def _show_diagnostics_stub(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data.in_({"diag:calculators", "diag:caliper", "diag:calories", "diag:flexibility", "diag:contraindications", "diag:hypertrophy"}))
+@router.callback_query(F.data.in_({"diag:caliper", "diag:calories", "diag:flexibility", "diag:contraindications", "diag:hypertrophy"}))
 async def diagnostics_stub_sections(callback: CallbackQuery) -> None:
     await _show_diagnostics_stub(callback)
+
+
+def _body_friendly_summary(payload: dict[str, object], calculations: dict[str, object]) -> str:
+    bmi_value = calculations.get("bmi")
+    bmi_status = calculations.get("bmi_status")
+    somatotype_value = calculations.get("somatotype")
+    ideal_weight_value = calculations.get("ideal_weight_kg")
+    whr_value = calculations.get("whr")
+    whr_status = calculations.get("whr_status")
+    chest_index_value = calculations.get("chest_index")
+    chest_index_status = calculations.get("chest_index_status")
+    limb_index_value = calculations.get("limb_index")
+    limb_index_status = calculations.get("limb_index_status")
+
+    if isinstance(ideal_weight_value, tuple):
+        ideal_weight_text = f"примерно {ideal_weight_value[0]}–{ideal_weight_value[2]} кг"
+    else:
+        ideal_weight_text = f"около {ideal_weight_value} кг"
+
+    limb_part = "Индекс длины конечностей не считали (рост сидя вы пропустили)."
+    if limb_index_value is not None:
+        limb_part = f"Индекс длины конечностей: {limb_index_value} ({limb_index_status})."
+
+    return (
+        "🧮 <b>Анализ тела</b>\n\n"
+        "👤 <b>Ваши данные</b>\n"
+        f"• Пол: {payload.get('gender', '—')}\n"
+        f"• Возраст: {payload.get('age', '—')}\n"
+        f"• Рост: {payload.get('height_cm', '—')} см\n"
+        f"• Вес: {payload.get('weight_kg', '—')} кг\n\n"
+        "📊 <b>Расчёты</b>\n"
+        f"• ИМТ: {bmi_value} — {bmi_status}\n"
+        f"• Тип телосложения: {somatotype_value}\n"
+        f"• Идеальный вес: {ideal_weight_text}\n"
+        f"• Индекс грудной клетки: {chest_index_value} ({chest_index_status})\n"
+        f"• Соотношение талия/бёдра: {whr_value} — {whr_status}\n"
+        f"• {limb_part}\n\n"
+        "📌 <b>Итог</b>\n"
+        "Это ориентировочная мини-диагностика по формулам. Для безопасного плана тренировок лучше сверить результат с тренером.\n\n"
+        "⚠️ Это не диагноз."
+    )
+
+
+@router.callback_query(F.data == "diag:calculators")
+async def start_body_calculators(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message:
+        await callback.answer()
+        return
+    await state.clear()
+    await state.update_data(flow="body_calculators")
+    await state.set_state(BodyCalculatorsStates.waiting_for_gender)
+    await callback.message.answer(
+        "🧮 Калькуляторы тела. Шаг 1/9: Ваш пол?",
+        reply_markup=get_scenario_my_data_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.message(BodyCalculatorsStates.waiting_for_gender)
+async def body_calc_gender(message: Message, state: FSMContext) -> None:
+    await state.update_data(gender=(message.text or "").strip())
+    await state.set_state(BodyCalculatorsStates.waiting_for_age)
+    await message.answer("Шаг 2/9: Укажите возраст (полных лет).")
+
+
+@router.message(BodyCalculatorsStates.waiting_for_age)
+async def body_calc_age(message: Message, state: FSMContext) -> None:
+    value = _to_number(message.text or "")
+    if value is None or not _is_in_range(value, 12, 90):
+        await message.answer("Введите возраст числом в диапазоне 12–90.")
+        return
+    await state.update_data(age=int(value))
+    await state.set_state(BodyCalculatorsStates.waiting_for_height)
+    await message.answer("Шаг 3/9: Рост (см).")
+
+
+@router.message(BodyCalculatorsStates.waiting_for_height)
+async def body_calc_height(message: Message, state: FSMContext) -> None:
+    value = _to_number(message.text or "")
+    if value is None or not _is_in_range(value, 120, 230):
+        await message.answer("Введите рост в диапазоне 120–230 см.")
+        return
+    await state.update_data(height_cm=value)
+    await state.set_state(BodyCalculatorsStates.waiting_for_weight)
+    await message.answer("Шаг 4/9: Вес (кг).")
+
+
+@router.message(BodyCalculatorsStates.waiting_for_weight)
+async def body_calc_weight(message: Message, state: FSMContext) -> None:
+    value = _to_number(message.text or "")
+    if value is None or not _is_in_range(value, 30, 250):
+        await message.answer("Введите вес в диапазоне 30–250 кг.")
+        return
+    await state.update_data(weight_kg=value)
+    await state.set_state(BodyCalculatorsStates.waiting_for_waist)
+    await message.answer("Шаг 5/9: Талия (см).")
+
+
+@router.message(BodyCalculatorsStates.waiting_for_waist)
+async def body_calc_waist(message: Message, state: FSMContext) -> None:
+    value = _to_number(message.text or "")
+    if value is None or not _is_in_range(value, 40, 200):
+        await message.answer("Введите талию в диапазоне 40–200 см.")
+        return
+    await state.update_data(waist_cm=value)
+    await state.set_state(BodyCalculatorsStates.waiting_for_hips)
+    await message.answer("Шаг 6/9: Бёдра (см).")
+
+
+@router.message(BodyCalculatorsStates.waiting_for_hips)
+async def body_calc_hips(message: Message, state: FSMContext) -> None:
+    value = _to_number(message.text or "")
+    if value is None or not _is_in_range(value, 40, 220):
+        await message.answer("Введите бёдра в диапазоне 40–220 см.")
+        return
+    await state.update_data(hips_cm=value)
+    await state.set_state(BodyCalculatorsStates.waiting_for_chest)
+    await message.answer("Шаг 7/9: Грудь (см).")
+
+
+@router.message(BodyCalculatorsStates.waiting_for_chest)
+async def body_calc_chest(message: Message, state: FSMContext) -> None:
+    value = _to_number(message.text or "")
+    if value is None or not _is_in_range(value, 40, 200):
+        await message.answer("Введите обхват груди в диапазоне 40–200 см.")
+        return
+    await state.update_data(chest_cm=value)
+    await state.set_state(BodyCalculatorsStates.waiting_for_wrist)
+    await message.answer("Шаг 8/9: Запястье (см).")
+
+
+@router.message(BodyCalculatorsStates.waiting_for_wrist)
+async def body_calc_wrist(message: Message, state: FSMContext) -> None:
+    value = _to_number(message.text or "")
+    if value is None or not _is_in_range(value, 10, 30):
+        await message.answer("Введите запястье в диапазоне 10–30 см.")
+        return
+    await state.update_data(wrist_cm=value)
+    await state.set_state(BodyCalculatorsStates.waiting_for_sitting_height)
+    await message.answer("Шаг 9/9: Рост сидя (см, можно пропустить).", reply_markup=get_scenario_skip_keyboard())
+
+
+@router.message(BodyCalculatorsStates.waiting_for_sitting_height, F.text == BUTTON_SKIP)
+async def body_calc_skip_sitting_height(message: Message, state: FSMContext) -> None:
+    await state.update_data(sitting_height_cm=None)
+    await _finish_body_calculators(message, state)
+
+
+@router.message(BodyCalculatorsStates.waiting_for_sitting_height)
+async def body_calc_sitting_height(message: Message, state: FSMContext) -> None:
+    value = _to_number(message.text or "")
+    if value is None or not _is_in_range(value, 50, 150):
+        await message.answer("Введите рост сидя в диапазоне 50–150 см или нажмите «Пропустить».")
+        return
+    await state.update_data(sitting_height_cm=value)
+    await _finish_body_calculators(message, state)
+
+
+async def _finish_body_calculators(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    payload = {
+        "gender": data.get("gender"),
+        "age": data.get("age"),
+        "height_cm": data.get("height_cm"),
+        "weight_kg": data.get("weight_kg"),
+        "waist_cm": data.get("waist_cm"),
+        "hips_cm": data.get("hips_cm"),
+        "chest_cm": data.get("chest_cm"),
+        "wrist_cm": data.get("wrist_cm"),
+        "sitting_height_cm": data.get("sitting_height_cm"),
+    }
+    calculations = _build_quick_calculations(payload)
+    if calculations.get("status") == "failed":
+        await message.answer(
+            "Не удалось посчитать калькуляторы автоматически. Откройте «📊 Мои результаты» или попробуйте заново.",
+            reply_markup=get_diagnostics_menu_keyboard(),
+        )
+        await state.clear()
+        return
+    text = _body_friendly_summary(payload=payload, calculations=calculations)
+    await message.answer(text, reply_markup=ReplyKeyboardRemove())
+    await state.clear()
 
 
 @router.callback_query(F.data == "diag:quick")
@@ -685,11 +869,7 @@ async def quick_health(message: Message, state: FSMContext) -> None:
         await message.answer(SAFE_STOP_MESSAGE, reply_markup=get_main_menu_keyboard())
         return
 
-    await message.answer(user_report_text, reply_markup=get_contact_trainer_keyboard())
-    await message.answer(
-        "Спасибо! Отчёт готов — можете обсудить его с тренером или вернуться в меню.",
-        reply_markup=get_contact_trainer_keyboard(),
-    )
+    await message.answer(user_report_text, reply_markup=ReplyKeyboardRemove())
     await state.clear()
 
 
