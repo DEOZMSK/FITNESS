@@ -197,6 +197,49 @@ class Database:
             )
             return diagnosis_session_id
 
+    def get_latest_diagnosis_result(self, user_id: int) -> dict[str, Any] | None:
+        """Return latest diagnosis session with related calculation payload."""
+        with self.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    ds.id AS diagnosis_session_id,
+                    ds.session_payload AS session_payload,
+                    ds.created_at AS session_created_at,
+                    ch.calculation_payload AS calculation_payload,
+                    ch.created_at AS calculation_created_at
+                FROM diagnosis_sessions ds
+                LEFT JOIN calculations_history ch
+                    ON ch.diagnosis_session_id = ds.id
+                WHERE ds.user_id = ?
+                ORDER BY ds.created_at DESC, ds.id DESC, ch.created_at DESC, ch.id DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                return None
+
+            session_payload_raw = row["session_payload"]
+            calculation_payload_raw = row["calculation_payload"]
+            session_payload = (
+                json.loads(session_payload_raw)
+                if isinstance(session_payload_raw, str)
+                else {}
+            )
+            calculation_payload = (
+                json.loads(calculation_payload_raw)
+                if isinstance(calculation_payload_raw, str)
+                else {}
+            )
+            return {
+                "diagnosis_session_id": int(row["diagnosis_session_id"]),
+                "session_payload": session_payload,
+                "session_created_at": row["session_created_at"],
+                "calculation_payload": calculation_payload,
+                "calculation_created_at": row["calculation_created_at"],
+            }
+
     def save_full_questionnaire(
         self,
         user_id: int,
