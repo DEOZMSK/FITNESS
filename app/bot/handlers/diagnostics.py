@@ -14,7 +14,14 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
-from app.calculators.body_metrics import bmi, bmi_interpretation, ideal_weight, whr, whr_interpretation
+from app.calculators.body_metrics import (
+    bmi,
+    bmi_interpretation,
+    ideal_weight,
+    ideal_weight_by_body_type,
+    whr,
+    whr_interpretation,
+)
 from app.calculators.calories import bju_distribution, bmr
 from app.bot.states import FullQuestionnaireStates, QuickDiagnosticsStates
 from app.bot.keyboards import (
@@ -66,12 +73,18 @@ def _build_quick_calculations(payload: dict[str, object]) -> dict[str, object]:
         bmr_value = bmr(weight_kg=weight_kg, height_cm=height_cm, age=age, sex=sex)
         macros = bju_distribution(weight_kg=weight_kg, calories_target=round(bmr_value), goal="maintain")
 
+        ideal_weight_estimate = ideal_weight_by_body_type(
+            height_cm=height_cm,
+            sex=sex,
+            body_type=str(payload.get("body_type", "")),
+        )
+
         calculations = {
             "bmi": bmi_value,
             "bmi_status": bmi_interpretation(bmi_value),
             "whr": whr_value,
             "whr_status": whr_interpretation(whr_value, sex),
-            "ideal_weight_kg": ideal_weight(height_cm=height_cm, sex=sex),
+            "ideal_weight_kg": ideal_weight_estimate,
             "bmr": bmr_value,
             "macros": macros,
         }
@@ -82,6 +95,12 @@ def _build_quick_calculations(payload: dict[str, object]) -> dict[str, object]:
 
 
 def _build_quick_report_text(payload: dict[str, object], calculations: dict[str, object]) -> str:
+    ideal_weight_value = calculations.get("ideal_weight_kg")
+    if isinstance(ideal_weight_value, tuple):
+        ideal_weight_text = f"{ideal_weight_value[0]}–{ideal_weight_value[1]} кг"
+    else:
+        ideal_weight_text = f"{ideal_weight_value} кг"
+
     user_data_block = (
         "👤 <b>Данные пользователя</b>\n"
         f"• Имя: {payload.get('name', '—')}\n"
@@ -99,7 +118,7 @@ def _build_quick_report_text(payload: dict[str, object], calculations: dict[str,
             "📈 <b>Расчёты</b>\n"
             f"• ИМТ: {calculations.get('bmi')} ({calculations.get('bmi_status')})\n"
             f"• WHR: {calculations.get('whr')} ({calculations.get('whr_status')})\n"
-            f"• Идеальный вес (оценка): {calculations.get('ideal_weight_kg')} кг\n"
+            f"• Идеальный вес (оценка): {ideal_weight_text}\n"
             f"• BMR: {calculations.get('bmr')} ккал/сутки\n"
             f"• БЖУ (поддержание): Б {macros.get('protein_g')} г / "
             f"Ж {macros.get('fat_g')} г / У {macros.get('carbs_g')} г"
