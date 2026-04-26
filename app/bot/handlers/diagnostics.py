@@ -611,9 +611,11 @@ async def quick_health(message: Message, state: FSMContext) -> None:
             bot=message.bot,
             user_id=user_id,
             lead_id=diagnosis_session_id,
-            payload=payload,
+            payload={**payload, "calculations": calculation_payload},
             title="Новая быстрая диагностика",
             lead_type="diagnosis",
+            telegram_user_id=message.from_user.id if message.from_user else None,
+            telegram_username=message.from_user.username if message.from_user else None,
         )
     except Exception:
         pass
@@ -833,9 +835,11 @@ async def finish_full_questionnaire(message: Message, state: FSMContext) -> None
             bot=message.bot,
             user_id=user_id,
             lead_id=questionnaire_id,
-            payload=payload,
+            payload={**payload, "calculations": calculation_payload},
             title="Новая полная анкета",
             lead_type="questionnaire",
+            telegram_user_id=message.from_user.id if message.from_user else None,
+            telegram_username=message.from_user.username if message.from_user else None,
         )
     except Exception:
         pass
