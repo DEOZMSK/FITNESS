@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from aiogram import F, Router
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
@@ -204,6 +206,34 @@ def _to_number(raw_value: str) -> float | None:
     return parsed
 
 
+def _to_blood_pressure(raw_value: str) -> tuple[int, int] | None:
+    match = re.fullmatch(r"\s*(\d{2,3})\s*[/\\\-\s]\s*(\d{2,3})\s*", raw_value)
+    if not match:
+        return None
+    systolic = int(match.group(1))
+    diastolic = int(match.group(2))
+    if systolic <= diastolic:
+        return None
+    if not (70 <= systolic <= 250 and 40 <= diastolic <= 150):
+        return None
+    return systolic, diastolic
+
+
+def _is_in_range(value: float, min_value: float, max_value: float) -> bool:
+    return min_value <= value <= max_value
+
+
+def _hips_confirmation_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Оставить", callback_data="diag:hips:keep"),
+                InlineKeyboardButton(text="✏️ Ввести заново", callback_data="diag:hips:retry"),
+            ]
+        ]
+    )
+
+
 def _find_stop_factors(text: str) -> list[str]:
     lowered = text.casefold()
     return [factor for factor in STOP_FACTORS if factor in lowered]
@@ -254,7 +284,7 @@ async def start_quick_diagnostics(callback: CallbackQuery, state: FSMContext) ->
     await state.update_data(flow="quick")
     await state.set_state(QuickDiagnosticsStates.waiting_for_name)
     await callback.message.answer(
-        "Быстрая диагностика. Шаг 1/12: Как вас зовут?",
+        "Быстрая диагностика. Шаг 1/13: Как вас зовут?",
         reply_markup=get_scenario_nav_keyboard(),
     )
     await callback.answer()
@@ -267,7 +297,7 @@ async def quick_back_to_start(message: Message, state: FSMContext) -> None:
     await state.update_data(flow="quick")
     await state.set_state(QuickDiagnosticsStates.waiting_for_name)
     await message.answer(
-        "Возвращаю к началу быстрой диагностики. Шаг 1/12: Как вас зовут?",
+        "Возвращаю к началу быстрой диагностики. Шаг 1/13: Как вас зовут?",
         reply_markup=get_scenario_nav_keyboard(),
     )
 
@@ -276,92 +306,152 @@ async def quick_back_to_start(message: Message, state: FSMContext) -> None:
 async def quick_name(message: Message, state: FSMContext) -> None:
     await state.update_data(name=(message.text or "").strip())
     await state.set_state(QuickDiagnosticsStates.waiting_for_age)
-    await message.answer("Шаг 2/12: Укажите возраст (полных лет).")
+    await message.answer("Шаг 2/13: Укажите возраст (полных лет).")
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_age)
 async def quick_age(message: Message, state: FSMContext) -> None:
     value = _to_number(message.text or "")
     if value is None:
-        await message.answer("Введите возраст числом, например: 29")
+        await message.answer("Не разобрал возраст. Введите число, например: 29.")
+        return
+    if not _is_in_range(value, 10, 100):
+        await message.answer("Похоже, возраст вне диапазона 10–100 лет. Попробуйте ещё раз.")
         return
     await state.update_data(age=int(value))
     await state.set_state(QuickDiagnosticsStates.waiting_for_gender)
-    await message.answer("Шаг 3/12: Ваш пол?")
+    await message.answer("Шаг 3/13: Ваш пол?")
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_gender)
 async def quick_gender(message: Message, state: FSMContext) -> None:
     await state.update_data(gender=(message.text or "").strip())
     await state.set_state(QuickDiagnosticsStates.waiting_for_height)
-    await message.answer("Шаг 4/12: Рост (см).")
+    await message.answer("Шаг 4/13: Рост (см).")
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_height)
 async def quick_height(message: Message, state: FSMContext) -> None:
     value = _to_number(message.text or "")
     if value is None:
-        await message.answer("Введите рост числом в см, например: 172")
+        await message.answer("Не разобрал рост. Введите число в см, например: 172.")
+        return
+    if not _is_in_range(value, 120, 230):
+        await message.answer("Рост должен быть в диапазоне 120–230 см. Попробуйте ещё раз.")
         return
     await state.update_data(height_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_weight)
-    await message.answer("Шаг 5/12: Вес (кг).")
+    await message.answer("Шаг 5/13: Вес (кг).")
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_weight)
 async def quick_weight(message: Message, state: FSMContext) -> None:
     value = _to_number(message.text or "")
     if value is None:
-        await message.answer("Введите вес числом в кг, например: 68")
+        await message.answer("Не разобрал вес. Введите число в кг, например: 68.")
+        return
+    if not _is_in_range(value, 30, 300):
+        await message.answer("Вес должен быть в диапазоне 30–300 кг. Попробуйте ещё раз.")
         return
     await state.update_data(weight_kg=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_waist)
-    await message.answer("Шаг 6/12: Обхват талии (см).")
+    await message.answer("Шаг 6/13: Обхват талии (см).")
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_waist)
 async def quick_waist(message: Message, state: FSMContext) -> None:
     value = _to_number(message.text or "")
     if value is None:
-        await message.answer("Введите обхват талии числом в см.")
+        await message.answer("Не разобрал талию. Введите число в см.")
+        return
+    if not _is_in_range(value, 40, 200):
+        await message.answer("Талия должна быть в диапазоне 40–200 см. Попробуйте ещё раз.")
         return
     await state.update_data(waist_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_hips)
-    await message.answer("Шаг 7/12: Обхват бёдер (см).")
+    await message.answer("Шаг 7/13: Обхват бёдер (см).")
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_hips)
 async def quick_hips(message: Message, state: FSMContext) -> None:
     value = _to_number(message.text or "")
     if value is None:
-        await message.answer("Введите обхват бёдер числом в см.")
+        await message.answer("Не разобрал бёдра. Введите число в см.")
+        return
+    if not _is_in_range(value, 40, 220):
+        await message.answer("Бёдра должны быть в диапазоне 40–220 см. Попробуйте ещё раз.")
+        return
+    data = await state.get_data()
+    waist_cm = data.get("waist_cm")
+    if isinstance(waist_cm, (int, float)) and value < float(waist_cm):
+        await state.update_data(pending_hips_cm=value)
+        await state.set_state(QuickDiagnosticsStates.waiting_for_hips_confirmation)
+        await message.answer(
+            "Бёдра меньше талии — такое бывает, но часто это просто опечатка. Оставляем так?",
+            reply_markup=_hips_confirmation_keyboard(),
+        )
         return
     await state.update_data(hips_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_chest)
-    await message.answer("Шаг 8/12: Обхват груди (см).")
+    await message.answer("Шаг 8/13: Обхват груди (см).")
+
+
+@router.callback_query(
+    QuickDiagnosticsStates.waiting_for_hips_confirmation,
+    F.data.in_({"diag:hips:keep", "diag:hips:retry"}),
+)
+async def quick_hips_confirmation(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message:
+        await callback.answer()
+        return
+
+    if callback.data == "diag:hips:keep":
+        data = await state.get_data()
+        pending_hips_cm = data.get("pending_hips_cm")
+        if not isinstance(pending_hips_cm, (int, float)):
+            await state.set_state(QuickDiagnosticsStates.waiting_for_hips)
+            await callback.message.answer("Не нашёл значение бёдер. Введите обхват бёдер ещё раз (см).")
+            await callback.answer()
+            return
+        await state.update_data(hips_cm=float(pending_hips_cm), pending_hips_cm=None)
+        await state.set_state(QuickDiagnosticsStates.waiting_for_chest)
+        await callback.message.answer("Принято. Шаг 8/13: Обхват груди (см).")
+        await callback.answer("Оставили текущее значение")
+        return
+
+    await state.update_data(pending_hips_cm=None)
+    await state.set_state(QuickDiagnosticsStates.waiting_for_hips)
+    await callback.message.answer("Хорошо, введите обхват бёдер заново (см).")
+    await callback.answer("Введите значение заново")
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_chest)
 async def quick_chest(message: Message, state: FSMContext) -> None:
     value = _to_number(message.text or "")
     if value is None:
-        await message.answer("Введите обхват груди числом в см.")
+        await message.answer("Не разобрал грудь. Введите число в см.")
+        return
+    if not _is_in_range(value, 50, 220):
+        await message.answer("Грудь должна быть в диапазоне 50–220 см. Попробуйте ещё раз.")
         return
     await state.update_data(chest_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_wrist)
-    await message.answer("Шаг 9/12: Обхват запястья (см).")
+    await message.answer("Шаг 9/13: Обхват запястья (см).")
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_wrist)
 async def quick_wrist(message: Message, state: FSMContext) -> None:
     value = _to_number(message.text or "")
     if value is None:
-        await message.answer("Введите обхват запястья числом в см.")
+        await message.answer("Не разобрал запястье. Введите число в см.")
+        return
+    if not _is_in_range(value, 10, 30):
+        await message.answer("Запястье должно быть в диапазоне 10–30 см. Попробуйте ещё раз.")
         return
     await state.update_data(wrist_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_sitting_height)
     await message.answer(
-        "Шаг 10/12: Рост сидя (см, опционально).",
+        "Шаг 10/13: Рост сидя (см, опционально).",
         reply_markup=get_scenario_skip_keyboard(),
     )
 
@@ -369,10 +459,10 @@ async def quick_wrist(message: Message, state: FSMContext) -> None:
 @router.message(QuickDiagnosticsStates.waiting_for_sitting_height, F.text == BUTTON_SKIP)
 async def quick_skip_sitting_height(message: Message, state: FSMContext) -> None:
     await state.update_data(sitting_height_cm=None)
-    await state.set_state(QuickDiagnosticsStates.waiting_for_goal)
+    await state.set_state(QuickDiagnosticsStates.waiting_for_pressure)
     await message.answer(
-        "Шаг 11/12: Какая у вас цель?",
-        reply_markup=get_scenario_nav_keyboard(),
+        "Шаг 11/13: Артериальное давление (например, 120/80, опционально).",
+        reply_markup=get_scenario_skip_keyboard(),
     )
 
 
@@ -380,12 +470,42 @@ async def quick_skip_sitting_height(message: Message, state: FSMContext) -> None
 async def quick_sitting_height(message: Message, state: FSMContext) -> None:
     value = _to_number(message.text or "")
     if value is None:
-        await message.answer("Введите рост сидя числом в см или нажмите «Пропустить».")
+        await message.answer("Не разобрал рост сидя. Введите число в см или нажмите «Пропустить».")
+        return
+    if not _is_in_range(value, 50, 140):
+        await message.answer("Рост сидя должен быть в диапазоне 50–140 см. Попробуйте ещё раз.")
         return
     await state.update_data(sitting_height_cm=value)
+    await state.set_state(QuickDiagnosticsStates.waiting_for_pressure)
+    await message.answer(
+        "Шаг 11/13: Артериальное давление (например, 120/80, опционально).",
+        reply_markup=get_scenario_skip_keyboard(),
+    )
+
+
+@router.message(QuickDiagnosticsStates.waiting_for_pressure, F.text == BUTTON_SKIP)
+async def quick_skip_pressure(message: Message, state: FSMContext) -> None:
+    await state.update_data(pressure=None)
     await state.set_state(QuickDiagnosticsStates.waiting_for_goal)
     await message.answer(
-        "Шаг 11/12: Какая у вас цель?",
+        "Шаг 12/13: Какая у вас цель?",
+        reply_markup=get_scenario_nav_keyboard(),
+    )
+
+
+@router.message(QuickDiagnosticsStates.waiting_for_pressure)
+async def quick_pressure(message: Message, state: FSMContext) -> None:
+    pressure = _to_blood_pressure(message.text or "")
+    if pressure is None:
+        await message.answer(
+            "Не разобрал давление. Введите в формате 120/80 или нажмите «Пропустить».",
+            reply_markup=get_scenario_skip_keyboard(),
+        )
+        return
+    await state.update_data(pressure=f"{pressure[0]}/{pressure[1]}")
+    await state.set_state(QuickDiagnosticsStates.waiting_for_goal)
+    await message.answer(
+        "Шаг 12/13: Какая у вас цель?",
         reply_markup=get_scenario_nav_keyboard(),
     )
 
@@ -394,7 +514,7 @@ async def quick_sitting_height(message: Message, state: FSMContext) -> None:
 async def quick_goal(message: Message, state: FSMContext) -> None:
     await state.update_data(goal=(message.text or "").strip())
     await state.set_state(QuickDiagnosticsStates.waiting_for_health)
-    await message.answer("Шаг 12/12: Кратко про здоровье/ограничения.")
+    await message.answer("Шаг 13/13: Кратко про здоровье/ограничения.")
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_health)
@@ -413,6 +533,7 @@ async def quick_health(message: Message, state: FSMContext) -> None:
         "chest_cm": data.get("chest_cm"),
         "wrist_cm": data.get("wrist_cm"),
         "sitting_height_cm": data.get("sitting_height_cm"),
+        "pressure": data.get("pressure"),
         "goal": data.get("goal"),
         "health": health_text,
     }
