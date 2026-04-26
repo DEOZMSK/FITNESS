@@ -1,4 +1,4 @@
-"""FSM states for diagnostics flows."""
+"""FSM states for diagnostics flow."""
 
 from aiogram.fsm.state import State, StatesGroup
 
@@ -14,10 +14,16 @@ class QuickDiagnosticsStates(StatesGroup):
     waiting_for_hips_confirmation = State()
     waiting_for_chest = State()
     waiting_for_wrist = State()
-    waiting_for_goal = State()
-    waiting_for_health = State()
     waiting_for_sitting_height = State()
-    waiting_for_known_fat = State()
+    waiting_for_goal = State()
+    waiting_for_activity = State()
+    waiting_for_workouts = State()
+    waiting_for_health_limits = State()
+    waiting_for_health_details = State()
+    waiting_for_pressure = State()
+    waiting_for_pregnancy = State()
+    waiting_for_consultation = State()
+    waiting_for_update_confirmation = State()
 
 
 class BodyCalculatorsStates(StatesGroup):

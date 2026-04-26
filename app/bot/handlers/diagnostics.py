@@ -1,37 +1,37 @@
-"""Unified diagnostics handlers based on a single user profile."""
+"""Unified fitness diagnostics flow and result views."""
 
 from __future__ import annotations
 
-import logging
-import math
-
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 
 from app.bot.keyboards import (
-    BUTTON_BODY_CALC,
-    BUTTON_CALIPER,
-    BUTTON_CALORIES,
-    BUTTON_CONTRAINDICATIONS,
+    BUTTON_CONSULT_NO,
+    BUTTON_CONSULT_YES,
+    BUTTON_CONTACT,
     BUTTON_DIAGNOSTICS,
-    BUTTON_FINAL_REPORT,
-    BUTTON_FLEXIBILITY,
+    BUTTON_DONT_KNOW,
     BUTTON_HOME_MENU,
-    BUTTON_PROFILE_START,
-    BUTTON_SKIP,
+    BUTTON_KEEP,
+    BUTTON_NO,
+    BUTTON_REENTER,
+    BUTTON_RETAKE,
+    BUTTON_RESULT_MY_DATA,
+    BUTTON_RESULT_REPORT,
+    BUTTON_RESULT_UPDATE,
+    BUTTON_SEX_MAN,
+    BUTTON_SEX_WOMAN,
+    BUTTON_SKIP_PRESSURE,
+    BUTTON_SKIP_SITTING,
+    BUTTON_VIEW_RESULTS,
+    BUTTON_YES,
     get_contact_trainer_keyboard,
-    get_diagnostics_menu_keyboard,
+    get_existing_profile_actions_keyboard,
     get_main_menu_keyboard,
-    get_scenario_skip_keyboard,
+    get_post_diagnostics_keyboard,
 )
-from app.bot.states import (
-    CaliperStates,
-    CaloriesStates,
-    ContraindicationsStates,
-    FlexibilityStates,
-    QuickDiagnosticsStates,
-)
+from app.bot.states import QuickDiagnosticsStates
 from app.calculators.body_metrics import (
     bmi,
     bmi_interpretation,
@@ -44,51 +44,93 @@ from app.calculators.body_metrics import (
     whr,
     whr_interpretation,
 )
-from app.calculators.caliper import coach_caliper_estimate
-from app.calculators.calories import bju_distribution, bmr, fat_index, per_meal, tdc
-from app.calculators.flexibility import passive_shoulder_test, shoulder_girdle_test, total_flexibility_score
+from app.calculators.calories import bju_distribution, tdc
+from app.config import load_settings
 from app.db import Database
-from app.services import send_diagnostics_summary
 
 router = Router(name=__name__)
-logger = logging.getLogger(__name__)
 
-ACTIVITY_OPTIONS = {
-    "Низкая активность": "1.2",
-    "Лёгкая активность": "1.3",
-    "Лёгкая активность + тренировки": "1.4",
-    "Средняя активность": "1.5",
-    "Тяжёлая активность": "1.6",
-    "Очень тяжёлая активность": "1.7",
+GOALS = [
+    "Похудеть",
+    "Улучшить здоровье",
+    "Начать тренироваться с нуля",
+    "Подтянуть тело",
+    "Набрать мышечную массу",
+    "Улучшить выносливость",
+    "Другое",
+]
+ACTIVITY_OPTIONS = [
+    "Низкая активность",
+    "Лёгкая активность",
+    "Лёгкая активность + тренировки",
+    "Средняя активность",
+    "Тяжёлая активность",
+    "Очень тяжёлая активность",
+]
+ACTIVITY_COEFFS = {
+    "Низкая активность": 1.2,
+    "Лёгкая активность": 1.3,
+    "Лёгкая активность + тренировки": 1.4,
+    "Средняя активность": 1.5,
+    "Тяжёлая активность": 1.6,
+    "Очень тяжёлая активность": 1.7,
 }
+WORKOUT_OPTIONS = ["0", "1–2", "3–4", "5+"]
+HEALTH_LIMIT_OPTIONS = ["Нет", "Да", "Не знаю"]
+PREGNANCY_OPTIONS = ["Нет", "Да", "Не применимо"]
 
 
-def _to_number(raw: str) -> float | None:
+def _two_col_keyboard(items: list[str], add_home: bool = False) -> ReplyKeyboardMarkup:
+    rows: list[list[KeyboardButton]] = []
+    for i in range(0, len(items), 2):
+        rows.append([KeyboardButton(text=x) for x in items[i : i + 2]])
+    if add_home:
+        rows.append([KeyboardButton(text=BUTTON_HOME_MENU)])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def _single_col_keyboard(items: list[str]) -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=item)] for item in items],
+        resize_keyboard=True,
+    )
+
+
+def _to_float(raw: str | None) -> float | None:
+    if raw is None:
+        return None
     try:
         return float(raw.strip().replace(",", "."))
     except ValueError:
         return None
 
 
-def _valid(v: float | None, lo: float, hi: float) -> bool:
-    return v is not None and lo <= v <= hi
-
-
-def _normalize_sex(sex: str | None) -> str | None:
-    if sex is None:
+def _parse_pressure(raw: str) -> tuple[int, int] | None:
+    normalized = raw.strip().replace(" ", "").replace("\\", "/")
+    if "/" not in normalized:
         return None
-    sex_key = sex.strip().lower()
-    male_values = {"м", "муж", "male", "man", "мужчина"}
-    female_values = {"ж", "жен", "female", "woman", "женщина"}
-    if sex_key in male_values:
-        return "мужчина"
-    if sex_key in female_values:
-        return "женщина"
-    return None
+    parts = normalized.split("/", maxsplit=1)
+    if len(parts) != 2:
+        return None
+    try:
+        s, d = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if not (70 <= s <= 260 and 40 <= d <= 160):
+        return None
+    return s, d
 
 
-def _is_skip_text(raw_text: str | None) -> bool:
-    return (raw_text or "").strip().lower() == BUTTON_SKIP.lower()
+def _safe_number(v: float | None) -> str:
+    if v is None:
+        return "—"
+    if abs(v - round(v)) < 1e-9:
+        return str(int(round(v)))
+    return str(round(v, 2)).replace(".", ",")
+
+
+def _normalize_sex(sex_text: str) -> str:
+    return "женщина" if sex_text == BUTTON_SEX_WOMAN else "мужчина"
 
 
 async def _user_context(message: Message) -> tuple[Database, int]:
@@ -102,210 +144,507 @@ async def _user_context(message: Message) -> tuple[Database, int]:
     return db, uid
 
 
-async def show_diagnostics_menu_message(message: Message) -> None:
-    await message.answer("🧪 Фитнес-диагностика\nВыберите раздел:", reply_markup=get_diagnostics_menu_keyboard())
+def _ask_number(field: str) -> str:
+    prompts = {
+        "age": "Введите возраст. Например: 34",
+        "height": "Введите рост в сантиметрах. Например: 168",
+        "weight": "Введите вес в килограммах. Например: 64",
+        "waist": "Введите обхват талии в сантиметрах. Например: 72",
+        "hips": "Введите обхват бёдер в сантиметрах. Например: 98",
+        "chest": "Введите обхват грудной клетки в сантиметрах. Например: 92",
+        "wrist": "Введите обхват запястья в сантиметрах. Например: 16",
+        "sitting": "Введите рост сидя в сантиметрах. Например: 90",
+    }
+    return prompts[field]
+
+
+async def _start_questionnaire(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.set_state(QuickDiagnosticsStates.waiting_for_name)
+    await message.answer(
+        "Сейчас я задам несколько вопросов, чтобы собрать первичные данные и подготовить фитнес-отчёт. "
+        "Это не медицинский диагноз, а предварительная оценка для дальнейшей работы с тренером."
+    )
+    await message.answer("Как вас зовут?")
 
 
 @router.message(F.text == BUTTON_DIAGNOSTICS)
-async def diagnostics_menu(message: Message) -> None:
-    await show_diagnostics_menu_message(message)
-
-
-@router.message(F.text == BUTTON_PROFILE_START)
-async def start_profile(message: Message, state: FSMContext) -> None:
+async def diagnostics_entry(message: Message, state: FSMContext) -> None:
+    db = Database()
+    profile = db.get_latest_profile_or_none(message.from_user.id)
+    if not profile:
+        await _start_questionnaire(message, state)
+        return
     await state.clear()
-    await state.set_state(QuickDiagnosticsStates.waiting_for_name)
-    await message.answer("🚀 Начать / обновить данные\nШаг 1/13: Ваше имя?")
+    await message.answer(
+        "Вы уже проходили фитнес-диагностику. Что хотите сделать?",
+        reply_markup=get_existing_profile_actions_keyboard(),
+    )
+
+
+@router.message(F.text == BUTTON_VIEW_RESULTS)
+async def show_prev_results(message: Message) -> None:
+    await message.answer("Открываю сохранённые результаты.", reply_markup=get_post_diagnostics_keyboard())
+
+
+@router.message(F.text == BUTTON_RETAKE)
+async def retake_diagnostics(message: Message, state: FSMContext) -> None:
+    await _start_questionnaire(message, state)
+
+
+@router.message(F.text == BUTTON_RESULT_UPDATE)
+async def update_diagnostics(message: Message, state: FSMContext) -> None:
+    await state.set_state(QuickDiagnosticsStates.waiting_for_update_confirmation)
+    await message.answer(
+        "Вы хотите обновить данные? Старый отчёт останется в истории, но актуальные данные будут заменены.",
+        reply_markup=_two_col_keyboard(["Да, обновить", "Отмена"]),
+    )
+
+
+@router.message(QuickDiagnosticsStates.waiting_for_update_confirmation)
+async def update_confirmation(message: Message, state: FSMContext) -> None:
+    txt = (message.text or "").strip()
+    if txt == "Да, обновить":
+        await _start_questionnaire(message, state)
+        return
+    await state.clear()
+    await message.answer("Окей, оставила текущие данные.", reply_markup=get_post_diagnostics_keyboard())
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_name)
 async def q_name(message: Message, state: FSMContext) -> None:
-    await state.update_data(full_name=(message.text or "").strip())
+    full_name = (message.text or "").strip()
+    if len(full_name) < 2:
+        await message.answer("Введите имя текстом. Например: Анна")
+        return
+    await state.update_data(full_name=full_name)
     await state.set_state(QuickDiagnosticsStates.waiting_for_sex)
-    await message.answer("Шаг 2/13: Пол (мужчина/женщина).")
+    await message.answer("Выберите пол:", reply_markup=_two_col_keyboard([BUTTON_SEX_WOMAN, BUTTON_SEX_MAN]))
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_sex)
 async def q_sex(message: Message, state: FSMContext) -> None:
-    normalized_sex = _normalize_sex(message.text)
-    if normalized_sex is None:
-        await message.answer("Не понял пол. Напишите: мужчина или женщина.")
+    txt = (message.text or "").strip()
+    if txt not in {BUTTON_SEX_WOMAN, BUTTON_SEX_MAN}:
+        await message.answer("Пожалуйста, выберите вариант кнопкой.")
         return
-    await state.update_data(sex=normalized_sex)
+    await state.update_data(sex=_normalize_sex(txt))
     await state.set_state(QuickDiagnosticsStates.waiting_for_age)
-    await message.answer("Шаг 3/13: Возраст (12–90).")
+    await message.answer(_ask_number("age"), reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=BUTTON_HOME_MENU)]], resize_keyboard=True))
+
+
+def _validate_number(message_text: str | None, lo: float, hi: float) -> float | None:
+    value = _to_float(message_text)
+    if value is None:
+        return None
+    if not (lo <= value <= hi):
+        return -1
+    return value
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_age)
 async def q_age(message: Message, state: FSMContext) -> None:
-    v = _to_number(message.text or "")
-    if not _valid(v, 12, 90):
-        await message.answer("Возраст: 12–90.")
+    value = _validate_number(message.text, 12, 90)
+    if value is None:
+        await message.answer("Не получилось распознать значение. Введите только число, например: 34")
         return
-    await state.update_data(age=int(v))
+    if value == -1:
+        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        return
+    await state.update_data(age=int(value))
     await state.set_state(QuickDiagnosticsStates.waiting_for_height)
-    await message.answer("Шаг 4/13: Рост (120–230 см).")
+    await message.answer(_ask_number("height"))
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_height)
 async def q_height(message: Message, state: FSMContext) -> None:
-    v = _to_number(message.text or "")
-    if not _valid(v, 120, 230):
-        await message.answer("Рост: 120–230 см.")
+    value = _validate_number(message.text, 120, 230)
+    if value is None:
+        await message.answer("Не получилось распознать значение. Введите только число, например: 168")
         return
-    await state.update_data(height_cm=v)
+    if value == -1:
+        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        return
+    if value < 135 or value > 215:
+        await message.answer("Проверьте, пожалуйста, рост — значение выглядит необычно.")
+    await state.update_data(height_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_weight)
-    await message.answer("Шаг 5/13: Вес (30–250 кг).")
+    await message.answer(_ask_number("weight"))
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_weight)
 async def q_weight(message: Message, state: FSMContext) -> None:
-    v = _to_number(message.text or "")
-    if not _valid(v, 30, 250):
-        await message.answer("Вес: 30–250 кг.")
+    value = _validate_number(message.text, 30, 250)
+    if value is None:
+        await message.answer("Не получилось распознать значение. Введите только число, например: 64")
         return
-    await state.update_data(weight_kg=v)
+    if value == -1:
+        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        return
+    if value < 40 or value > 180:
+        await message.answer("Проверьте, пожалуйста, вес — значение выглядит необычно.")
+    await state.update_data(weight_kg=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_waist)
-    await message.answer("Шаг 6/13: Талия (40–200 см).")
+    await message.answer(_ask_number("waist"))
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_waist)
 async def q_waist(message: Message, state: FSMContext) -> None:
-    v = _to_number(message.text or "")
-    if not _valid(v, 40, 200):
-        await message.answer("Талия: 40–200 см.")
+    value = _validate_number(message.text, 40, 200)
+    if value is None:
+        await message.answer("Не получилось распознать значение. Введите только число, например: 72")
         return
-    await state.update_data(waist_cm=v)
+    if value == -1:
+        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        return
+    await state.update_data(waist_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_hips)
-    await message.answer("Шаг 7/13: Бёдра (40–220 см).")
+    await message.answer(_ask_number("hips"))
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_hips)
 async def q_hips(message: Message, state: FSMContext) -> None:
-    v = _to_number(message.text or "")
-    if not _valid(v, 40, 220):
-        await message.answer("Бёдра: 40–220 см.")
+    value = _validate_number(message.text, 40, 220)
+    if value is None:
+        await message.answer("Не получилось распознать значение. Введите только число, например: 98")
         return
-    d = await state.get_data()
-    if v < float(d["waist_cm"]):
-        await state.update_data(pending_hips=v)
+    if value == -1:
+        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        return
+    data = await state.get_data()
+    if value < float(data["waist_cm"]):
+        await state.update_data(pending_hips=value)
         await state.set_state(QuickDiagnosticsStates.waiting_for_hips_confirmation)
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✅ Оставить", callback_data="hips:keep"), InlineKeyboardButton(text="✏️ Ввести заново", callback_data="hips:retry")]])
-        await message.answer("Проверьте обхват бёдер. Обычно он больше обхвата талии. Оставить как есть?", reply_markup=kb)
+        await message.answer(
+            "Проверьте обхват бёдер. Обычно он больше обхвата талии. Оставить как есть?",
+            reply_markup=_two_col_keyboard([BUTTON_KEEP, BUTTON_REENTER]),
+        )
         return
-    await state.update_data(hips_cm=v)
+    await state.update_data(hips_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_chest)
-    await message.answer("Шаг 8/13: Грудная клетка (40–200 см).")
+    await message.answer(_ask_number("chest"))
 
 
-@router.callback_query(QuickDiagnosticsStates.waiting_for_hips_confirmation, F.data.in_({"hips:keep", "hips:retry"}))
-async def hips_confirm(callback: CallbackQuery, state: FSMContext) -> None:
-    if callback.data == "hips:retry":
-        await state.set_state(QuickDiagnosticsStates.waiting_for_hips)
-        await callback.message.answer("Введите бёдра снова.")
-    else:
+@router.message(QuickDiagnosticsStates.waiting_for_hips_confirmation)
+async def q_hips_confirm(message: Message, state: FSMContext) -> None:
+    txt = (message.text or "").strip()
+    if txt == BUTTON_KEEP:
         data = await state.get_data()
         await state.update_data(hips_cm=data.get("pending_hips"))
         await state.set_state(QuickDiagnosticsStates.waiting_for_chest)
-        await callback.message.answer("Шаг 8/13: Грудная клетка (40–200 см).")
-    await callback.answer()
+        await message.answer(_ask_number("chest"))
+        return
+    await state.set_state(QuickDiagnosticsStates.waiting_for_hips)
+    await message.answer(_ask_number("hips"))
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_chest)
 async def q_chest(message: Message, state: FSMContext) -> None:
-    v = _to_number(message.text or "")
-    if not _valid(v, 40, 200):
-        await message.answer("Грудь: 40–200 см.")
+    value = _validate_number(message.text, 40, 200)
+    if value is None:
+        await message.answer("Не получилось распознать значение. Введите только число, например: 92")
         return
-    await state.update_data(chest_cm=v)
+    if value == -1:
+        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        return
+    await state.update_data(chest_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_wrist)
-    await message.answer("Шаг 9/13: Запястье (10–30 см).")
+    await message.answer(_ask_number("wrist"))
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_wrist)
 async def q_wrist(message: Message, state: FSMContext) -> None:
-    v = _to_number(message.text or "")
-    if not _valid(v, 10, 30):
-        await message.answer("Запястье: 10–30 см.")
+    value = _validate_number(message.text, 10, 30)
+    if value is None:
+        await message.answer("Не получилось распознать значение. Введите только число, например: 16")
         return
-    await state.update_data(wrist_cm=v)
-    await state.set_state(QuickDiagnosticsStates.waiting_for_goal)
-    await message.answer("Шаг 10/13: Ваша цель?")
-
-
-@router.message(QuickDiagnosticsStates.waiting_for_goal)
-async def q_goal(message: Message, state: FSMContext) -> None:
-    await state.update_data(goal=(message.text or "").strip())
-    await state.set_state(QuickDiagnosticsStates.waiting_for_health)
-    await message.answer("Шаг 11/13: Ограничения/здоровье одним текстом.")
-
-
-@router.message(QuickDiagnosticsStates.waiting_for_health)
-async def q_health(message: Message, state: FSMContext) -> None:
-    await state.update_data(health_notes=(message.text or "").strip())
+    if value == -1:
+        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        return
+    await state.update_data(wrist_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_sitting_height)
-    await message.answer("Шаг 12/13: Рост сидя (50–150) или Пропустить.", reply_markup=get_scenario_skip_keyboard())
-
-
-@router.message(QuickDiagnosticsStates.waiting_for_sitting_height, F.text.func(_is_skip_text))
-async def q_sitting_skip(message: Message, state: FSMContext) -> None:
-    await state.update_data(sitting_height_cm=None)
-    await state.set_state(QuickDiagnosticsStates.waiting_for_known_fat)
-    await message.answer("Шаг 13/13: Известный % жира (3–70) или Пропустить.", reply_markup=get_scenario_skip_keyboard())
+    await message.answer(
+        _ask_number("sitting"),
+        reply_markup=_two_col_keyboard([BUTTON_SKIP_SITTING, BUTTON_HOME_MENU]),
+    )
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_sitting_height)
 async def q_sitting(message: Message, state: FSMContext) -> None:
-    v = _to_number(message.text or "")
-    if not _valid(v, 50, 150):
-        await message.answer("Рост сидя: 50–150 или Пропустить.")
+    txt = (message.text or "").strip()
+    if txt == BUTTON_SKIP_SITTING:
+        await state.update_data(sitting_height_cm=None)
+    else:
+        value = _validate_number(txt, 50, 150)
+        if value is None:
+            await message.answer("Не получилось распознать значение. Введите только число, например: 90")
+            return
+        if value == -1:
+            await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+            return
+        await state.update_data(sitting_height_cm=value)
+    await state.set_state(QuickDiagnosticsStates.waiting_for_goal)
+    await message.answer("Выберите цель:", reply_markup=_single_col_keyboard(GOALS + [BUTTON_HOME_MENU]))
+
+
+@router.message(QuickDiagnosticsStates.waiting_for_goal)
+async def q_goal(message: Message, state: FSMContext) -> None:
+    txt = (message.text or "").strip()
+    if txt not in GOALS:
+        await message.answer("Пожалуйста, выберите цель кнопкой.")
         return
-    await state.update_data(sitting_height_cm=v)
-    await state.set_state(QuickDiagnosticsStates.waiting_for_known_fat)
-    await message.answer("Шаг 13/13: Известный % жира (3–70) или Пропустить.", reply_markup=get_scenario_skip_keyboard())
+    await state.update_data(goal=txt)
+    await state.set_state(QuickDiagnosticsStates.waiting_for_activity)
+    await message.answer("Выберите уровень активности:", reply_markup=_single_col_keyboard(ACTIVITY_OPTIONS + [BUTTON_HOME_MENU]))
 
 
-@router.message(QuickDiagnosticsStates.waiting_for_known_fat, F.text.func(_is_skip_text))
-async def q_fat_skip(message: Message, state: FSMContext) -> None:
-    await state.update_data(known_fat_percent=None)
-    await _finish_profile(message, state)
-
-
-@router.message(QuickDiagnosticsStates.waiting_for_known_fat)
-async def q_fat(message: Message, state: FSMContext) -> None:
-    v = _to_number(message.text or "")
-    if not _valid(v, 3, 70):
-        await message.answer("% жира: 3–70 или Пропустить.")
+@router.message(QuickDiagnosticsStates.waiting_for_activity)
+async def q_activity(message: Message, state: FSMContext) -> None:
+    txt = (message.text or "").strip()
+    if txt not in ACTIVITY_OPTIONS:
+        await message.answer("Пожалуйста, выберите вариант кнопкой.")
         return
-    await state.update_data(known_fat_percent=v)
-    await _finish_profile(message, state)
+    await state.update_data(activity_level=txt)
+    await state.set_state(QuickDiagnosticsStates.waiting_for_workouts)
+    await message.answer("Сколько тренировок в неделю?", reply_markup=_two_col_keyboard(WORKOUT_OPTIONS + [BUTTON_HOME_MENU]))
 
 
-async def _calculate_body(profile: dict) -> dict:
-    b = bmi(profile["height_cm"], profile["weight_kg"])
-    s = somatotype(profile["sex"], profile["wrist_cm"])
-    c = chest_index(profile["chest_cm"], profile["height_cm"])
-    li = limb_index(profile["height_cm"], profile.get("sitting_height_cm"))
-    w = whr(profile["waist_cm"], profile["hips_cm"])
-    ideal = ideal_weight_by_body_type(profile["height_cm"], profile["sex"], s)
+@router.message(QuickDiagnosticsStates.waiting_for_workouts)
+async def q_workouts(message: Message, state: FSMContext) -> None:
+    txt = (message.text or "").strip()
+    if txt not in WORKOUT_OPTIONS:
+        await message.answer("Пожалуйста, выберите вариант кнопкой.")
+        return
+    await state.update_data(workouts_per_week=txt)
+    await state.set_state(QuickDiagnosticsStates.waiting_for_health_limits)
+    await message.answer("Есть ли ограничения по здоровью?", reply_markup=_two_col_keyboard(HEALTH_LIMIT_OPTIONS + [BUTTON_HOME_MENU]))
+
+
+@router.message(QuickDiagnosticsStates.waiting_for_health_limits)
+async def q_limits(message: Message, state: FSMContext) -> None:
+    txt = (message.text or "").strip()
+    if txt not in HEALTH_LIMIT_OPTIONS:
+        await message.answer("Пожалуйста, выберите вариант кнопкой.")
+        return
+    await state.update_data(health_limit_flag=txt)
+    if txt == "Да":
+        await state.set_state(QuickDiagnosticsStates.waiting_for_health_details)
+        await message.answer("Коротко опишите ограничения по здоровью текстом.")
+        return
+    await state.update_data(health_notes="—")
+    await state.set_state(QuickDiagnosticsStates.waiting_for_pressure)
+    await message.answer(
+        "Если знаете, введите давление в формате 120/80",
+        reply_markup=_two_col_keyboard([BUTTON_SKIP_PRESSURE, BUTTON_HOME_MENU]),
+    )
+
+
+@router.message(QuickDiagnosticsStates.waiting_for_health_details)
+async def q_limits_details(message: Message, state: FSMContext) -> None:
+    txt = (message.text or "").strip()
+    if len(txt) < 2:
+        await message.answer("Введите короткое описание ограничений текстом.")
+        return
+    await state.update_data(health_notes=txt)
+    await state.set_state(QuickDiagnosticsStates.waiting_for_pressure)
+    await message.answer(
+        "Если знаете, введите давление в формате 120/80",
+        reply_markup=_two_col_keyboard([BUTTON_SKIP_PRESSURE, BUTTON_HOME_MENU]),
+    )
+
+
+@router.message(QuickDiagnosticsStates.waiting_for_pressure)
+async def q_pressure(message: Message, state: FSMContext) -> None:
+    txt = (message.text or "").strip()
+    if txt == BUTTON_SKIP_PRESSURE:
+        await state.update_data(pressure_text=None)
+    else:
+        pressure = _parse_pressure(txt)
+        if pressure is None:
+            await message.answer("Не получилось распознать значение. Пример: 120/80")
+            return
+        await state.update_data(pressure_text=f"{pressure[0]}/{pressure[1]}")
+
+    data = await state.get_data()
+    if data.get("sex") == "женщина":
+        await state.set_state(QuickDiagnosticsStates.waiting_for_pregnancy)
+        await message.answer("Беременность?", reply_markup=_two_col_keyboard(PREGNANCY_OPTIONS + [BUTTON_HOME_MENU]))
+        return
+    await state.update_data(pregnancy_status="Не применимо")
+    await state.set_state(QuickDiagnosticsStates.waiting_for_consultation)
+    await message.answer(
+        "Хотите бесплатную консультацию / задать вопрос тренеру?",
+        reply_markup=_single_col_keyboard([BUTTON_CONSULT_YES, BUTTON_CONSULT_NO, BUTTON_HOME_MENU]),
+    )
+
+
+@router.message(QuickDiagnosticsStates.waiting_for_pregnancy)
+async def q_pregnancy(message: Message, state: FSMContext) -> None:
+    txt = (message.text or "").strip()
+    if txt not in PREGNANCY_OPTIONS:
+        await message.answer("Пожалуйста, выберите вариант кнопкой.")
+        return
+    await state.update_data(pregnancy_status=txt)
+    await state.set_state(QuickDiagnosticsStates.waiting_for_consultation)
+    await message.answer(
+        "Хотите бесплатную консультацию / задать вопрос тренеру?",
+        reply_markup=_single_col_keyboard([BUTTON_CONSULT_YES, BUTTON_CONSULT_NO, BUTTON_HOME_MENU]),
+    )
+
+
+@router.message(QuickDiagnosticsStates.waiting_for_consultation)
+async def q_consult(message: Message, state: FSMContext) -> None:
+    txt = (message.text or "").strip()
+    if txt not in {BUTTON_CONSULT_YES, BUTTON_CONSULT_NO}:
+        await message.answer("Пожалуйста, выберите вариант кнопкой.")
+        return
+    await state.update_data(wants_consultation=txt == BUTTON_CONSULT_YES)
+    await _finish_diagnostics(message, state)
+
+
+def _calculate_payload(profile: dict) -> dict:
+    body_bmi = bmi(profile["height_cm"], profile["weight_kg"])
+    body_type = somatotype(profile["sex"], profile["wrist_cm"])
+    chest_idx = chest_index(profile["chest_cm"], profile["height_cm"])
+    limb_idx = limb_index(profile["height_cm"], profile.get("sitting_height_cm"))
+    body_whr = whr(profile["waist_cm"], profile["hips_cm"])
+    ideal = ideal_weight_by_body_type(profile["height_cm"], profile["sex"], body_type)
+
+    sex_coeff = 1.0 if profile["sex"] == "мужчина" else 0.9
+    bmr_value = round(sex_coeff * profile["weight_kg"] * 24 * 0.95, 2)
+    tdc_value = tdc(bmr_value, ACTIVITY_COEFFS[profile["activity_level"]])
+    macros = bju_distribution(tdc_value=tdc_value, protein_share=0.2, fat_share=0.3)
+
     return {
-        "bmi": b,
-        "bmi_status": bmi_interpretation(b, int(profile["age"])),
-        "somatotype_wrist": s,
-        "chest_index": c,
-        "chest_index_status": chest_index_interpretation(c, profile["sex"]),
-        "limb_index": li,
-        "limb_index_status": limb_index_interpretation(li),
+        "bmi": body_bmi,
+        "bmi_status": bmi_interpretation(body_bmi, int(profile["age"])),
+        "body_type": body_type,
+        "chest_index": chest_idx,
+        "chest_index_status": chest_index_interpretation(chest_idx, profile["sex"]),
+        "limb_index": limb_idx,
+        "limb_index_status": limb_index_interpretation(limb_idx),
         "ideal_weight": ideal,
-        "whr": w,
-        "whr_status": whr_interpretation(w, profile["sex"]),
+        "whr": body_whr,
+        "whr_status": whr_interpretation(body_whr, profile["sex"]),
+        "bmr": bmr_value,
+        "tdc": tdc_value,
+        "macros": macros,
     }
 
 
-async def _finish_profile(message: Message, state: FSMContext) -> None:
-    data = await state.get_data()
+def _ideal_weight_text(ideal_weight: float | tuple[float, float, float]) -> str:
+    if isinstance(ideal_weight, tuple):
+        return f"{_safe_number(ideal_weight[0])}–{_safe_number(ideal_weight[2])} кг"
+    return f"{_safe_number(ideal_weight)} кг"
+
+
+def _build_report_text(profile: dict, payload: dict) -> str:
+    lines = [
+        "📊 <b>Итоговый фитнес-отчёт</b>",
+        "",
+        "👤 <b>Ваши данные:</b>",
+        f"Имя: {profile.get('full_name') or '—'}",
+        f"Пол: {profile.get('sex') or '—'}",
+        f"Возраст: {profile.get('age') or '—'}",
+        f"Рост: {_safe_number(profile.get('height_cm'))} см",
+        f"Вес: {_safe_number(profile.get('weight_kg'))} кг",
+        f"Цель: {profile.get('goal') or '—'}",
+        "",
+        "🧮 <b>Расчёты:</b>",
+        f"ИМТ: {_safe_number(payload['bmi'])}",
+        f"Категория ИМТ: {payload['bmi_status']}",
+        f"Ориентир по весу: {_ideal_weight_text(payload['ideal_weight'])}",
+        f"Тип телосложения: {payload['body_type']}",
+        f"Соотношение талия/бёдра: {_safe_number(payload['whr'])}",
+        f"Тип жироотложения: {payload['whr_status']}",
+        f"Калории: {_safe_number(payload['tdc'])} ккал/сутки",
+        (
+            "БЖУ: "
+            f"Б {_safe_number(payload['macros']['protein_g'])} г / "
+            f"Ж {_safe_number(payload['macros']['fat_g'])} г / "
+            f"У {_safe_number(payload['macros']['carbs_g'])} г"
+        ),
+        "",
+        "⚠️ <b>Ограничения:</b>",
+        f"{profile.get('health_notes') or 'Не указаны'}",
+        "",
+        "📌 <b>Предварительный вывод:</b>",
+        "• Показатели дают стартовую картину для безопасного начала тренировок.",
+        "• Для результата важно синхронизировать нагрузку, питание и восстановление.",
+        "• При ограничениях по здоровью нагрузку повышайте только постепенно.",
+        "",
+        "💬 <b>Что обсудить с тренером:</b>",
+        "• цель;",
+        "• ограничения по здоровью;",
+        "• безопасный уровень нагрузки;",
+        "• питание;",
+        "• частоту тренировок;",
+        "• индивидуальный план.",
+        "",
+        "⚠️ <b>Важно:</b>",
+        "Это предварительная оценка. Бот не ставит диагноз и не заменяет врача или тренера.",
+        "",
+        "Если хотите разобрать свою ситуацию точнее — напишите Лене. У каждого человека разные цели, ограничения и стартовый уровень.",
+    ]
+    return "\n".join(lines)
+
+
+def _build_admin_report(message: Message, profile: dict, payload: dict) -> str:
+    username = f"@{message.from_user.username}" if message.from_user.username else "—"
+    return (
+        "🧪 Новая фитнес-диагностика\n\n"
+        "Пользователь:\n"
+        f"Имя: {profile.get('full_name') or '—'}\n"
+        f"Telegram: {username}\n"
+        f"User ID: {message.from_user.id}\n\n"
+        "Данные:\n"
+        f"Пол: {profile.get('sex') or '—'}\n"
+        f"Возраст: {profile.get('age') or '—'}\n"
+        f"Рост/вес: {_safe_number(profile.get('height_cm'))} / {_safe_number(profile.get('weight_kg'))}\n"
+        f"Талия/бёдра: {_safe_number(profile.get('waist_cm'))} / {_safe_number(profile.get('hips_cm'))}\n"
+        f"Грудь: {_safe_number(profile.get('chest_cm'))}\n"
+        f"Запястье: {_safe_number(profile.get('wrist_cm'))}\n"
+        f"Цель: {profile.get('goal') or '—'}\n"
+        f"Активность: {profile.get('activity_level') or '—'}\n"
+        f"Ограничения: {profile.get('health_notes') or '—'}\n\n"
+        "Расчёты:\n"
+        f"ИМТ: {_safe_number(payload['bmi'])}\n"
+        f"Категория: {payload['bmi_status']}\n"
+        f"Ориентир по весу: {_ideal_weight_text(payload['ideal_weight'])}\n"
+        f"WHR: {_safe_number(payload['whr'])}\n"
+        f"Тип жироотложения: {payload['whr_status']}\n"
+        f"Тип телосложения: {payload['body_type']}\n\n"
+        "Контакт:\n"
+        "Пользователь может написать Лене: @Al0PBEDA"
+    )
+
+
+async def _finish_diagnostics(message: Message, state: FSMContext) -> None:
+    raw = await state.get_data()
+    profile = {
+        "full_name": raw.get("full_name"),
+        "sex": raw.get("sex"),
+        "age": raw.get("age"),
+        "height_cm": raw.get("height_cm"),
+        "weight_kg": raw.get("weight_kg"),
+        "waist_cm": raw.get("waist_cm"),
+        "hips_cm": raw.get("hips_cm"),
+        "chest_cm": raw.get("chest_cm"),
+        "wrist_cm": raw.get("wrist_cm"),
+        "sitting_height_cm": raw.get("sitting_height_cm"),
+        "goal": raw.get("goal"),
+        "activity_level": raw.get("activity_level"),
+        "workouts_per_week": raw.get("workouts_per_week"),
+        "health_limit_flag": raw.get("health_limit_flag"),
+        "health_notes": raw.get("health_notes"),
+        "pressure_text": raw.get("pressure_text"),
+        "pregnancy_status": raw.get("pregnancy_status"),
+        "wants_consultation": raw.get("wants_consultation"),
+    }
+    payload = _calculate_payload(profile)
+    report_text = _build_report_text(profile, payload)
+
     db, user_id = await _user_context(message)
-    profile = {**data}
     db.upsert_diagnostic_profile(
         {
             "user_id": user_id,
@@ -313,353 +652,71 @@ async def _finish_profile(message: Message, state: FSMContext) -> None:
             "username": message.from_user.username,
             "first_name": message.from_user.first_name,
         },
-        profile,
+        {
+            **profile,
+            "latest_body_metrics_payload": payload,
+            "latest_calories_payload": {
+                "bmr": payload["bmr"],
+                "tdc": payload["tdc"],
+                "macros": payload["macros"],
+            },
+            "latest_report_text": report_text,
+        },
     )
-    body_payload = await _calculate_body(profile)
-    db.save_calculation_history(user_id, "body_metrics", body_payload)
-    db.update_diagnostic_profile_fields(message.from_user.id, {"latest_body_metrics_payload": body_payload})
-    text = f"✅ Профиль обновлён.\nИМТ: {body_payload['bmi']} ({body_payload['bmi_status']})."
-    await message.answer(text, reply_markup=get_diagnostics_menu_keyboard())
+    db.save_calculation_history(user_id, "unified_diagnostics", payload)
+
+    await message.answer("Данные сохранены. Теперь можно посмотреть итоговый отчёт.", reply_markup=get_post_diagnostics_keyboard())
+    await state.clear()
+
+    admin_text = _build_admin_report(message, profile, payload)
     try:
-        await send_diagnostics_summary(
-            bot=message.bot,
-            user_id=user_id,
-            lead_id=user_id,
-            payload={"profile": profile, "body": body_payload},
-            title="Новый/обновлённый профиль диагностики",
-            lead_type="diagnosis",
-            telegram_user_id=message.from_user.id,
-            telegram_username=message.from_user.username,
-        )
+        await message.bot.send_message(load_settings().admin_id, admin_text)
     except Exception:
         pass
-    await state.clear()
 
 
-@router.message(F.text == BUTTON_BODY_CALC)
-async def run_body_calc(message: Message) -> None:
-    db, user_id = await _user_context(message)
-    profile = db.get_latest_profile_or_none(message.from_user.id)
-    required = ["sex", "age", "height_cm", "weight_kg", "waist_cm", "hips_cm", "chest_cm", "wrist_cm"]
-    missing = [x for x in required if profile is None or profile.get(x) in (None, "")]
-    if missing:
-        await message.answer("Недостаточно данных профиля. Нажмите «🚀 Начать / обновить данные».")
-        return
-    body = await _calculate_body(profile)
-    db.save_calculation_history(user_id, "body_metrics", body)
-    db.update_diagnostic_profile_fields(message.from_user.id, {"latest_body_metrics_payload": body})
-    ideal = body["ideal_weight"]
-    ideal_text = f"{ideal} кг" if not isinstance(ideal, tuple) else f"{ideal[0]}–{ideal[2]} кг"
-    limb_text = "не рассчитывался" if body["limb_index"] is None else f"{body['limb_index']} ({body['limb_index_status']})"
-    await message.answer(
-        "🧮 Калькуляторы тела\n\n"
-        f"ИМТ: {body['bmi']}\nКатегория: {body['bmi_status']}\n"
-        f"По запястью: {body['somatotype_wrist']}\nПо грудной клетке: {body['chest_index_status']}\nПо длине конечностей: {limb_text}\n"
-        f"Идеальный вес: {ideal_text}\nWHR: {body['whr']}\nТип жироотложения: {body['whr_status']}\n\n"
-        "⚠️ Это предварительная оценка, не медицинский диагноз.",
-        reply_markup=get_diagnostics_menu_keyboard(),
-    )
-
-
-@router.message(F.text == BUTTON_CALORIES)
-async def start_calories(message: Message, state: FSMContext) -> None:
-    db, _ = await _user_context(message)
+@router.message(F.text == BUTTON_RESULT_MY_DATA)
+async def show_my_data(message: Message) -> None:
+    db = Database()
     profile = db.get_latest_profile_or_none(message.from_user.id)
     if not profile:
-        await message.answer("Сначала заполните профиль: «🚀 Начать / обновить данные».")
+        await message.answer("Данные пока не заполнены. Нажмите «🧪 Фитнес-диагностика».", reply_markup=get_main_menu_keyboard())
         return
-    req = ["sex", "age", "height_cm", "weight_kg", "goal"]
-    miss = [x for x in req if profile.get(x) in (None, "")]
-    if miss:
-        await message.answer("В профиле не хватает базовых полей. Обновите данные.")
-        return
-    await state.update_data(profile=profile)
-    if not profile.get("activity_level"):
-        await state.set_state(CaloriesStates.waiting_for_activity)
-        await message.answer("Выберите активность:\n" + "\n".join(ACTIVITY_OPTIONS.keys()))
-        return
-    if not profile.get("meals_count"):
-        await state.set_state(CaloriesStates.waiting_for_meals)
-        await message.answer("Сколько приёмов пищи в день? (1–8)")
-        return
-    await _finish_calories(message, state, profile)
 
-
-@router.message(CaloriesStates.waiting_for_activity)
-async def calories_activity(message: Message, state: FSMContext) -> None:
-    if (message.text or "").strip() not in ACTIVITY_OPTIONS:
-        await message.answer("Выберите вариант из списка активности.")
-        return
-    data = await state.get_data()
-    profile = data["profile"]
-    profile["activity_level"] = ACTIVITY_OPTIONS[message.text.strip()]
-    await state.update_data(profile=profile)
-    if not profile.get("meals_count"):
-        await state.set_state(CaloriesStates.waiting_for_meals)
-        await message.answer("Сколько приёмов пищи в день? (1–8)")
-        return
-    await _finish_calories(message, state, profile)
-
-
-@router.message(CaloriesStates.waiting_for_meals)
-async def calories_meals(message: Message, state: FSMContext) -> None:
-    v = _to_number(message.text or "")
-    if not _valid(v, 1, 8):
-        await message.answer("Количество приёмов пищи: 1–8.")
-        return
-    data = await state.get_data()
-    profile = data["profile"]
-    profile["meals_count"] = int(v)
-    await _finish_calories(message, state, profile)
-
-
-async def _finish_calories(message: Message, state: FSMContext, profile: dict) -> None:
-    db, user_id = await _user_context(message)
-    known_fat = profile.get("known_fat_percent")
-    normalized_sex = _normalize_sex(profile.get("sex"))
-    if normalized_sex is None:
-        logger.warning("Calories aborted due to invalid sex in profile. user_id=%s sex=%r", message.from_user.id, profile.get("sex"))
-        await state.clear()
-        await message.answer(
-            "В профиле некорректно указан пол. Пожалуйста, заново заполните шаг с полом: «🚀 Начать / обновить данные».",
-            reply_markup=get_diagnostics_menu_keyboard(),
-        )
-        return
-    use_fat = 0.95 if known_fat is None else fat_index(float(known_fat), normalized_sex)
-    bmr_value = round((1.0 if normalized_sex == "мужчина" else 0.9) * float(profile["weight_kg"]) * 24 * use_fat, 2)
-    tdc_value = tdc(bmr_value, str(profile["activity_level"]))
-    macros = bju_distribution(tdc_value=tdc_value)
-    meals = int(profile.get("meals_count") or 4)
-    meal = per_meal(macros, meals)
-    payload = {"bmr": bmr_value, "tdc": tdc_value, "macros": macros, "per_meal": meal, "meals_count": meals}
-    db.save_calculation_history(user_id, "calories", payload)
-    db.update_diagnostic_profile_fields(message.from_user.id, {"activity_level": profile.get("activity_level"), "meals_count": meals, "latest_calories_payload": payload})
-    note = "\nРасчёт ориентировочный, потому что % жира не указан." if known_fat is None else ""
-    await message.answer(
-        "🔥 Калории и БЖУ\n"
-        f"BMR: {bmr_value} ккал\nСуточный расход: {tdc_value} ккал\n"
-        f"Белки: {macros['protein_g']} г, Жиры: {macros['fat_g']} г, Углеводы: {macros['carbs_g']} г\n"
-        f"На {meals} приёма: Б {meal['protein_g']} / Ж {meal['fat_g']} / У {meal['carbs_g']} г.{note}",
-        reply_markup=get_diagnostics_menu_keyboard(),
+    text = (
+        "👤 Ваши данные:\n"
+        f"Имя: {profile.get('full_name') or '—'}\n"
+        f"Пол: {profile.get('sex') or '—'}\n"
+        f"Возраст: {profile.get('age') or '—'}\n"
+        f"Рост: {_safe_number(profile.get('height_cm'))}\n"
+        f"Вес: {_safe_number(profile.get('weight_kg'))}\n"
+        f"Талия: {_safe_number(profile.get('waist_cm'))}\n"
+        f"Бёдра: {_safe_number(profile.get('hips_cm'))}\n"
+        f"Грудь: {_safe_number(profile.get('chest_cm'))}\n"
+        f"Запястье: {_safe_number(profile.get('wrist_cm'))}\n"
+        f"Рост сидя: {_safe_number(profile.get('sitting_height_cm'))}\n"
+        f"Цель: {profile.get('goal') or '—'}\n"
+        f"Активность: {profile.get('activity_level') or '—'}\n"
+        f"Тренировок в неделю: {profile.get('workouts_per_week') or '—'}\n"
+        f"Ограничения/здоровье: {profile.get('health_notes') or '—'}\n"
+        f"Давление: {profile.get('pressure_text') or '—'}\n"
+        f"Беременность: {profile.get('pregnancy_status') or '—'}"
     )
-    await state.clear()
+    await message.answer(text, reply_markup=get_post_diagnostics_keyboard())
 
 
-@router.message(F.text == BUTTON_CALIPER)
-async def caliper_start(message: Message, state: FSMContext) -> None:
-    db, _ = await _user_context(message)
+@router.message(F.text == BUTTON_RESULT_REPORT)
+async def show_final_report(message: Message) -> None:
+    db = Database()
     profile = db.get_latest_profile_or_none(message.from_user.id)
-    normalized_sex = _normalize_sex(profile.get("sex") if profile else None)
-    if not profile or normalized_sex is None or not profile.get("height_cm") or not profile.get("weight_kg"):
-        logger.info(
-            "Caliper start rejected due to incomplete profile. user_id=%s has_profile=%s sex=%r height=%r weight=%r",
-            message.from_user.id,
-            bool(profile),
-            profile.get("sex") if profile else None,
-            profile.get("height_cm") if profile else None,
-            profile.get("weight_kg") if profile else None,
-        )
-        await message.answer("Для калипера нужен профиль с полом/ростом/весом.")
+    if not profile:
+        await message.answer("Нет сохранённой диагностики. Нажмите «🧪 Фитнес-диагностика».", reply_markup=get_main_menu_keyboard())
         return
-    profile["sex"] = normalized_sex
-    await state.update_data(profile=profile, folds={})
-    await state.set_state(CaliperStates.waiting_for_start)
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Продолжить", callback_data="caliper:go"), InlineKeyboardButton(text="Назад", callback_data="caliper:back")]])
-    await message.answer("Для этого расчёта нужны замеры складок. При неточных замерах результат будет неточным.", reply_markup=kb)
+    report_text = profile.get("latest_report_text")
+    if not report_text:
+        payload = _calculate_payload(profile)
+        report_text = _build_report_text(profile, payload)
+        db.update_diagnostic_profile_fields(message.from_user.id, {"latest_report_text": report_text})
 
-
-@router.callback_query(CaliperStates.waiting_for_start, F.data.in_({"caliper:go", "caliper:back"}))
-async def caliper_go(callback: CallbackQuery, state: FSMContext) -> None:
-    if callback.data == "caliper:back":
-        await state.clear()
-        await callback.message.answer("Окей, возвращаю в меню.", reply_markup=get_diagnostics_menu_keyboard())
-    else:
-        await state.update_data(fields=["forearm", "arm_front", "arm_back", "scapula", "abdomen", "thigh", "calf"])
-        await state.set_state(CaliperStates.waiting_for_fold)
-        await callback.message.answer("Введите складку forearm (1–100 мм).")
-    await callback.answer()
-
-
-@router.message(CaliperStates.waiting_for_fold)
-async def caliper_fold(message: Message, state: FSMContext) -> None:
-    v = _to_number(message.text or "")
-    if not _valid(v, 1, 100):
-        await message.answer("Введите значение 1–100 мм.")
-        return
-    data = await state.get_data()
-    fields = data.get("fields") or []
-    folds = data.get("folds") or {}
-    profile = data.get("profile") or {}
-    if not fields:
-        logger.warning("Caliper fold state has empty fields. user_id=%s folds_len=%s", message.from_user.id, len(folds))
-        await state.clear()
-        await message.answer("Сценарий калипера сбился. Давайте начнём заново.", reply_markup=get_diagnostics_menu_keyboard())
-        return
-    if len(folds) >= len(fields):
-        logger.warning(
-            "Caliper fold index overflow prevented. user_id=%s folds_len=%s fields_len=%s",
-            message.from_user.id,
-            len(folds),
-            len(fields),
-        )
-        await state.clear()
-        await message.answer("Похоже, замеры уже заполнены. Запустите калипер ещё раз из меню.", reply_markup=get_diagnostics_menu_keyboard())
-        return
-    field = fields[len(folds)]
-    folds[field] = v
-    normalized_sex = _normalize_sex(profile.get("sex"))
-    if normalized_sex is None:
-        logger.warning("Caliper aborted due to invalid sex in profile. user_id=%s sex=%r", message.from_user.id, profile.get("sex"))
-        await state.clear()
-        await message.answer(
-            "Не удалось определить пол в профиле. Пожалуйста, обновите профиль и выберите пол заново.",
-            reply_markup=get_diagnostics_menu_keyboard(),
-        )
-        return
-    male = normalized_sex == "мужчина"
-    if len(folds) == len(fields):
-        if male and "chest" not in folds:
-            folds["chest"] = 10.0
-        try:
-            result = coach_caliper_estimate(
-                sex=normalized_sex,
-                age=int(profile.get("age") or 30),
-                height_cm=float(profile["height_cm"]),
-                weight_kg=float(profile["weight_kg"]),
-                **folds,
-            )
-        except (TypeError, ValueError) as exc:
-            logger.warning(
-                "Caliper estimate failed. user_id=%s sex=%r age=%r has_height=%s has_weight=%s folds_keys=%s error=%s",
-                message.from_user.id,
-                profile.get("sex"),
-                profile.get("age"),
-                bool(profile.get("height_cm")),
-                bool(profile.get("weight_kg")),
-                sorted(folds.keys()),
-                exc,
-            )
-            await state.clear()
-            await message.answer(
-                "Не удалось посчитать калипер из-за неполных данных профиля. Обновите профиль и попробуйте снова.",
-                reply_markup=get_diagnostics_menu_keyboard(),
-            )
-            return
-        db, user_id = await _user_context(message)
-        db.save_calculation_history(user_id, "caliper", result)
-        db.update_diagnostic_profile_fields(message.from_user.id, {"caliper_payload": result, "known_fat_percent": result["fat_percent"]})
-        await state.clear()
-        await message.answer(f"📏 Калипер\n% жира: {result['fat_percent']}\nLBM: {result['lbm_kg']} кг\nСтатус: {result['fat_percent_status']}", reply_markup=get_diagnostics_menu_keyboard())
-        return
-    await state.update_data(folds=folds)
-    await message.answer(f"Введите складку {fields[len(folds)]} (1–100 мм).")
-
-
-@router.message(F.text == BUTTON_FLEXIBILITY)
-async def flexibility_start(message: Message, state: FSMContext) -> None:
-    await state.set_state(FlexibilityStates.waiting_for_test_1)
-    await message.answer("Тест 1: Ладони касаются / Пальцы касаются / До 3 см / > 4 см")
-
-
-@router.message(FlexibilityStates.waiting_for_test_1)
-async def flex_test_1(message: Message, state: FSMContext) -> None:
-    res = shoulder_girdle_test((message.text or "").strip())
-    if res["points"] == 0:
-        await message.answer("Введите один из вариантов теста 1.")
-        return
-    await state.update_data(test1=res)
-    await state.set_state(FlexibilityStates.waiting_for_test_2)
-    await message.answer("Тест 2: расстояние между кистями (см).")
-
-
-@router.message(FlexibilityStates.waiting_for_test_2)
-async def flex_test_2(message: Message, state: FSMContext) -> None:
-    v = _to_number(message.text or "")
-    if v is None or v <= 0:
-        await message.answer("Введите расстояние в см.")
-        return
-    t2 = passive_shoulder_test(v)
-    data = await state.get_data()
-    score = total_flexibility_score(int(data["test1"]["points"]), int(t2["points"]))
-    payload = {"test1": data["test1"], "test2": t2, "total": score}
-    db, user_id = await _user_context(message)
-    db.save_calculation_history(user_id, "flexibility", payload)
-    db.update_diagnostic_profile_fields(message.from_user.id, {"flexibility_payload": payload})
-    await state.clear()
-    await message.answer(f"🧍 Гибкость\nИтог: {score['total_points']} баллов — {score['label']}", reply_markup=get_diagnostics_menu_keyboard())
-
-
-QUESTIONS = [
-    "Есть ли серьёзные заболевания сердца или изменения ЭКГ?",
-    "Был ли недавно инфаркт, стенокардия, серьёзная аритмия?",
-    "Есть ли тромбоз, тромбофлебит или эмболия?",
-    "Есть ли острые инфекции?",
-    "Есть ли нарушения ОДА/ревматоидные/мышечно-скелетные проблемы?",
-    "Давление выше 150/100?",
-    "Есть ли беременность во второй половине или осложнённая беременность?",
-]
-
-
-@router.message(F.text == BUTTON_CONTRAINDICATIONS)
-async def contraindications_start(message: Message, state: FSMContext) -> None:
-    await state.update_data(i=0, answers=[])
-    await state.set_state(ContraindicationsStates.waiting_for_answer)
-    await message.answer(f"🛡 Противопоказания\n{QUESTIONS[0]}\nОтвет: да/нет")
-
-
-@router.message(ContraindicationsStates.waiting_for_answer)
-async def contraindications_answer(message: Message, state: FSMContext) -> None:
-    ans = (message.text or "").strip().lower()
-    if ans not in {"да", "нет"}:
-        await message.answer("Ответьте «да» или «нет».")
-        return
-    data = await state.get_data()
-    i = int(data.get("i", 0))
-    answers = data.get("answers") or []
-    if i < 0 or i >= len(QUESTIONS):
-        logger.warning("Contraindications state index is invalid. user_id=%s i=%s answers_len=%s", message.from_user.id, i, len(answers))
-        await state.clear()
-        await message.answer(
-            "Сценарий опроса сбился. Запустите раздел «Противопоказания» ещё раз.",
-            reply_markup=get_diagnostics_menu_keyboard(),
-        )
-        return
-    answers.append({"q": QUESTIONS[i], "a": ans})
-    i += 1
-    if i >= len(QUESTIONS):
-        flagged = any(x["a"] == "да" for x in answers)
-        payload = {"answers": answers, "flagged": flagged}
-        db, _ = await _user_context(message)
-        db.update_diagnostic_profile_fields(message.from_user.id, {"contraindications_payload": payload})
-        await state.clear()
-        text = (
-            "По вашим ответам сейчас не стоит проходить тестирование без разрешения врача."
-            if flagged
-            else "Критичных стоп-факторов по анкете не отмечено."
-        )
-        await message.answer(text, reply_markup=get_diagnostics_menu_keyboard())
-        return
-    await state.update_data(i=i, answers=answers)
-    await message.answer(f"{QUESTIONS[i]}\nОтвет: да/нет")
-
-
-@router.message(F.text == BUTTON_FINAL_REPORT)
-async def final_report(message: Message) -> None:
-    db, _ = await _user_context(message)
-    p = db.get_latest_profile_or_none(message.from_user.id)
-    if not p:
-        await message.answer("Нет профиля. Нажмите «🚀 Начать / обновить данные».")
-        return
-    body = p.get("latest_body_metrics_payload") or "Не рассчитывались"
-    cal = p.get("latest_calories_payload") or "Не рассчитывались"
-    caliper = p.get("caliper_payload") or "Не рассчитывался"
-    flex = p.get("flexibility_payload") or "Не проходилась"
-    contra = p.get("contraindications_payload") or "Не проходились"
-    await message.answer(
-        "📊 Итоговый отчёт\n"
-        f"👤 {p.get('full_name')}, {p.get('age')} лет, {p.get('sex')}, {p.get('height_cm')} см/{p.get('weight_kg')} кг\n"
-        f"Цель: {p.get('goal')}\n\n"
-        f"🧮 Тело: {body}\n\n🔥 Калории и БЖУ: {cal}\n\n📏 Состав тела: {caliper}\n\n🧍 Гибкость: {flex}\n\n🛡 Противопоказания: {contra}\n\n"
-        "Если хотите разобрать ситуацию точнее — напишите Лене.",
-        reply_markup=get_contact_trainer_keyboard(),
-    )
+    await message.answer(report_text, reply_markup=get_contact_trainer_keyboard())
+    await message.answer("Меню результатов:", reply_markup=get_post_diagnostics_keyboard())
