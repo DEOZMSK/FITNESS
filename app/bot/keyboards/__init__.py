@@ -1,5 +1,6 @@
 """Keyboards package."""
 
+from .contact_cta import CONTACT_TRAINER_TEXT, CONTACT_TRAINER_URL, get_contact_trainer_keyboard
 from .main_menu import (
     BUTTON_ABOUT,
     BUTTON_CONTACT,
@@ -17,6 +18,9 @@ from .navigation import (
 )
 
 __all__ = (
+    "get_contact_trainer_keyboard",
+    "CONTACT_TRAINER_URL",
+    "CONTACT_TRAINER_TEXT",
     "BUTTON_ABOUT",
     "BUTTON_BACK",
     "BUTTON_CANCEL",

@@ -13,6 +13,7 @@ from app.bot.keyboards import (
     BUTTON_CONTACT,
     BUTTON_DIAGNOSTICS,
     BUTTON_HOME_MENU,
+    get_contact_trainer_keyboard,
     get_main_menu_keyboard,
 )
 
@@ -77,4 +78,4 @@ async def open_diagnostics_by_text(message: Message) -> None:
 @router.message(F.text.in_({BUTTON_CONTACT, BUTTON_CONTACT_ALT}))
 async def open_contact_by_text(message: Message) -> None:
     """Open trainer contact section from reply keyboard."""
-    await message.answer(build_contacts_text())
+    await message.answer(build_contacts_text(), reply_markup=get_contact_trainer_keyboard())

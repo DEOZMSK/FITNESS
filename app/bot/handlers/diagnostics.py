@@ -11,9 +11,7 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    KeyboardButton,
     Message,
-    ReplyKeyboardMarkup,
 )
 
 from app.calculators.body_metrics import (
@@ -29,6 +27,7 @@ from app.bot.states import FullQuestionnaireStates, QuickDiagnosticsStates
 from app.bot.keyboards import (
     BUTTON_BACK,
     BUTTON_SKIP,
+    get_contact_trainer_keyboard,
     get_main_menu_keyboard,
     get_scenario_nav_keyboard,
     get_scenario_skip_keyboard,
@@ -53,15 +52,6 @@ def _diag_menu_keyboard() -> InlineKeyboardMarkup:
         ]
     )
 
-
-def _diagnostics_cta_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="💬 Написать тренеру"), KeyboardButton(text="📊 Мои результаты")],
-            [KeyboardButton(text="🏠 Главное меню")],
-        ],
-        resize_keyboard=True,
-    )
 
 
 def _build_quick_calculations(payload: dict[str, object]) -> dict[str, object]:
@@ -645,10 +635,10 @@ async def quick_health(message: Message, state: FSMContext) -> None:
         await message.answer(SAFE_STOP_MESSAGE, reply_markup=get_main_menu_keyboard())
         return
 
-    await message.answer(user_report_text, reply_markup=_diagnostics_cta_keyboard())
+    await message.answer(user_report_text, reply_markup=get_contact_trainer_keyboard())
     await message.answer(
         "Спасибо! Отчёт готов — можете обсудить его с тренером или вернуться в меню.",
-        reply_markup=_diagnostics_cta_keyboard(),
+        reply_markup=get_contact_trainer_keyboard(),
     )
     await state.clear()
 
@@ -869,9 +859,9 @@ async def finish_full_questionnaire(message: Message, state: FSMContext) -> None
         await message.answer(SAFE_STOP_MESSAGE, reply_markup=get_main_menu_keyboard())
         return
 
-    await message.answer(user_report_text, reply_markup=_diagnostics_cta_keyboard())
+    await message.answer(user_report_text, reply_markup=get_contact_trainer_keyboard())
     await message.answer(
         "Спасибо! Полная анкета обработана, отчёт готов.",
-        reply_markup=_diagnostics_cta_keyboard(),
+        reply_markup=get_contact_trainer_keyboard(),
     )
     await state.clear()

@@ -10,19 +10,21 @@ from aiogram.types import (
     PreCheckoutQuery,
 )
 
+from app.bot.keyboards import get_contact_trainer_keyboard
+from app.bot.states import DonateStates
 from app.data.products import products
 from app.data.reviews import reviews
 from app.data.trainer_profile import trainer_profile
-from app.bot.states import DonateStates
 from app.db import Database
 from app.services import DONATION_MIN_AMOUNT, create_invoice, send_payment_event
 
 router = Router(name=__name__)
 
+
 def _about_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="👩‍🏫 Профиль тренера", callback_data="about:profile")],
+            [InlineKeyboardButton(text="👩‍🏫 Обо мне", callback_data="about:profile")],
             [InlineKeyboardButton(text="🛍 Услуги", callback_data="about:services")],
             [InlineKeyboardButton(text="💬 Отзывы", callback_data="about:reviews")],
             [InlineKeyboardButton(text="📞 Контакты", callback_data="about:contacts")],
@@ -37,14 +39,73 @@ def _about_back_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def _build_services_lines() -> list[str]:
+    active_products = [item for item in products if item.get("is_active")]
+    if not active_products:
+        return ["Сейчас нет активных услуг."]
+
+    lines: list[str] = []
+    for item in active_products:
+        lines.append(
+            "\n".join(
+                [
+                    f"• <b>{item['name']}</b>",
+                    str(item["description"]),
+                    f"Формат: {item.get('format', '—')}",
+                    f"Результат: {item.get('result', '—')}",
+                    f"Стоимость: {item['price']} {item['currency']}",
+                ]
+            )
+        )
+    return lines
+
+
+def _build_reviews_lines() -> list[str]:
+    published_reviews = [item for item in reviews if item.get("is_published", True)]
+    if not published_reviews:
+        return ["Пока нет отзывов."]
+
+    lines: list[str] = []
+    for item in published_reviews:
+        stars = "⭐" * int(item.get("rating", 0))
+        lines.append(
+            "\n".join(
+                [
+                    f"• <b>{item['author_name']}</b> {stars}",
+                    f"Результат: {item.get('result', '—')}",
+                    str(item["text"]),
+                ]
+            )
+        )
+    return lines
+
 
 def build_contacts_text() -> str:
+    contacts = trainer_profile.get("contacts", {})
     return (
         "📞 <b>Контакты</b>\n\n"
-        f"{trainer_profile['contacts']}\n\n"
-        "🌐 <b>Соцсети</b>\n"
-        f"{trainer_profile['social']}"
+        f"Telegram: {contacts.get('telegram', '—')}\n"
+        f"Ссылка: {contacts.get('cta_url', '—')}"
     )
+
+
+def _build_about_text() -> str:
+    audience_lines = "\n".join(f"• {line}" for line in trainer_profile.get("audience", []))
+    uniqueness_lines = "\n".join(f"• {line}" for line in trainer_profile.get("uniqueness", []))
+    services_lines = "\n\n".join(_build_services_lines())
+    reviews_lines = "\n\n".join(_build_reviews_lines())
+
+    blocks = [
+        "👩‍🏫 <b>Обо мне</b>",
+        f"<b>Имя:</b> {trainer_profile.get('name', '—')}",
+        f"<b>Позиционирование:</b> {trainer_profile.get('positioning', '—')}",
+        f"<b>Аудитория:</b>\n{audience_lines or '• —'}",
+        f"<b>Уникальность:</b>\n{uniqueness_lines or '• —'}",
+        f"🛍 <b>Услуги</b>\n{services_lines}",
+        f"💬 <b>Отзывы</b>\n{reviews_lines}",
+        build_contacts_text(),
+    ]
+    return "\n\n".join(blocks)
 
 
 async def show_about_menu_message(message: Message) -> None:
@@ -76,16 +137,9 @@ async def show_profile(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    text = (
-        f"👩‍🏫 <b>{trainer_profile['trainer_name']}</b>\n\n"
-        f"{trainer_profile['bio']}\n\n"
-        f"Фото: {trainer_profile['photo']}\n"
-        f"CTA: {trainer_profile['cta']}"
-    )
-
     await callback.message.edit_text(
-        text,
-        reply_markup=_about_back_keyboard(),
+        _build_about_text(),
+        reply_markup=get_contact_trainer_keyboard(),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -98,24 +152,10 @@ async def show_services(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    active_products = [item for item in products if item.get("is_active")]
-
-    if not active_products:
-        text = "Сейчас нет активных услуг."
-    else:
-        lines = ["🛍 <b>Услуги</b>"]
-        for item in active_products:
-            lines.append(
-                f"\n• <b>{item['name']}</b>\n"
-                f"{item['description']}\n"
-                f"Стоимость: {item['price']} {item['currency']}\n"
-                f"{item.get('cta', '')}"
-            )
-        text = "\n".join(lines)
-
+    text = "🛍 <b>Услуги</b>\n\n" + "\n\n".join(_build_services_lines())
     await callback.message.edit_text(
         text,
-        reply_markup=_about_back_keyboard(),
+        reply_markup=get_contact_trainer_keyboard(),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -128,20 +168,10 @@ async def show_reviews(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    published_reviews = [item for item in reviews if item.get("is_published", True)]
-
-    if not published_reviews:
-        text = "Пока нет отзывов."
-    else:
-        lines = ["💬 <b>Отзывы</b>"]
-        for item in published_reviews:
-            stars = "⭐" * int(item.get("rating", 0))
-            lines.append(f"\n• <b>{item['author_name']}</b> {stars}\n{item['text']}")
-        text = "\n".join(lines)
-
+    text = "💬 <b>Отзывы</b>\n\n" + "\n\n".join(_build_reviews_lines())
     await callback.message.edit_text(
         text,
-        reply_markup=_about_back_keyboard(),
+        reply_markup=get_contact_trainer_keyboard(),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -156,7 +186,7 @@ async def show_contacts(callback: CallbackQuery) -> None:
 
     await callback.message.edit_text(
         build_contacts_text(),
-        reply_markup=_about_back_keyboard(),
+        reply_markup=get_contact_trainer_keyboard(),
         parse_mode="HTML",
     )
     await callback.answer()

@@ -8,8 +8,8 @@ from aiogram import F, Router
 from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 
 from app.bot.handlers.diagnostics import show_diagnostics_menu_message
-from app.bot.handlers.start import build_contacts_text
-from app.bot.keyboards import BUTTON_HOME_MENU, BUTTON_RESULTS
+from app.bot.handlers.about import build_contacts_text
+from app.bot.keyboards import BUTTON_HOME_MENU, BUTTON_RESULTS, get_contact_trainer_keyboard
 from app.db import Database
 
 router = Router(name=__name__)
@@ -108,4 +108,4 @@ async def restart_diagnostics_from_results(message: Message) -> None:
 
 @router.message(F.text == BUTTON_CONTACT_ALT)
 async def open_contact_from_results(message: Message) -> None:
-    await message.answer(build_contacts_text(), reply_markup=_results_actions_keyboard())
+    await message.answer(build_contacts_text(), reply_markup=get_contact_trainer_keyboard())
