@@ -38,14 +38,31 @@ def _format_created_at(raw_value: object) -> str:
 
 
 def _build_results_text(payload: dict[str, object], calculations: dict[str, object], created_at: object) -> str:
+    whr_value = calculations.get("whr", "не рассчитывался")
+    whr_status = calculations.get("whr_status", "—")
+    if whr_value == "не рассчитывался":
+        whr_line = "• WHR: не рассчитывался в этом сценарии"
+    else:
+        whr_line = f"• WHR: {whr_value} ({whr_status})"
+
+    macros = calculations.get("macros")
+    if isinstance(macros, dict):
+        macros_line = (
+            f"• БЖУ: Б {macros.get('protein_g', '—')} г / "
+            f"Ж {macros.get('fat_g', '—')} г / У {macros.get('carbs_g', '—')} г"
+        )
+    else:
+        macros_line = "• БЖУ: не рассчитывались в этом сценарии"
+
     lines = [
         "📊 <b>Ваши последние результаты</b>",
         f"📅 Дата: {_format_created_at(created_at)}",
         "",
         "📈 <b>Ключевые метрики</b>",
         f"• ИМТ: {calculations.get('bmi', '—')} ({calculations.get('bmi_status', '—')})",
-        f"• WHR: {calculations.get('whr', '—')} ({calculations.get('whr_status', '—')})",
+        whr_line,
         f"• BMR: {calculations.get('bmr', '—')} ккал/сутки",
+        macros_line,
         f"• Цель: {payload.get('goal', '—')}",
     ]
 
@@ -61,6 +78,17 @@ def _build_results_text(payload: dict[str, object], calculations: dict[str, obje
         restrictions_line += "не указаны"
 
     lines.extend(["", "⚠️ <b>Ограничения</b>", restrictions_line])
+    lines.extend(
+        [
+            "",
+            "ℹ️ <b>Что это значит</b>",
+            "• ИМТ (BMI): скрининг массы тела (вес / рост²).",
+            "• WHR (талия/бёдра): индикатор распределения жира и риска.",
+            "• BMR: базовый обмен для старта по калориям.",
+            "• БЖУ: белки/жиры/углеводы на день (если рассчитывались).",
+            "• Идеальный вес: оценка по росту, полу и типу телосложения/формуле.",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -91,7 +119,19 @@ async def show_latest_results(message: Message) -> None:
     saved_user_report_text = latest_result.get("user_report_text")
     if isinstance(saved_user_report_text, str) and saved_user_report_text.strip():
         date_line = f"📅 Дата: {_format_created_at(latest_result.get('session_created_at'))}"
-        text = f"📊 <b>Ваши последние результаты</b>\n{date_line}\n\n{saved_user_report_text}"
+        extra_text = _build_results_text(
+            payload=payload if isinstance(payload, dict) else {},
+            calculations=calculations if isinstance(calculations, dict) else {},
+            created_at=latest_result.get("session_created_at"),
+        )
+        explanation_block = extra_text.split("ℹ️ <b>Что это значит</b>", 1)
+        if len(explanation_block) == 2:
+            text = (
+                f"📊 <b>Ваши последние результаты</b>\n{date_line}\n\n{saved_user_report_text}\n\n"
+                f"ℹ️ <b>Что это значит</b>{explanation_block[1]}"
+            )
+        else:
+            text = f"📊 <b>Ваши последние результаты</b>\n{date_line}\n\n{saved_user_report_text}"
     else:
         text = _build_results_text(
             payload=payload if isinstance(payload, dict) else {},

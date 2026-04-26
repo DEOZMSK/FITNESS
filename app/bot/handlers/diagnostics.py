@@ -42,8 +42,8 @@ router = Router(name=__name__)
 def _diag_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⚡ Быстрая диагностика", callback_data="diag:quick")],
-            [InlineKeyboardButton(text="📋 Полная анкета", callback_data="diag:full")],
+            [InlineKeyboardButton(text="⚡ Экспресс-расчёт метрик", callback_data="diag:quick")],
+            [InlineKeyboardButton(text="📋 Расширенная анкета здоровья", callback_data="diag:full")],
             [InlineKeyboardButton(text="🧮 Калькуляторы", callback_data="diag:calculators")],
             [InlineKeyboardButton(text="🔥 Калории", callback_data="diag:calories")],
             [InlineKeyboardButton(text="🤸 Гибкость", callback_data="diag:flexibility")],
@@ -140,7 +140,7 @@ def _build_quick_report_text(payload: dict[str, object], calculations: dict[str,
 
 def _build_quick_admin_report_text(payload: dict[str, object], calculations: dict[str, object]) -> str:
     lines = [
-        "🧪 Быстрая диагностика",
+        "🧪 Экспресс-расчёт метрик",
         f"• Имя: {payload.get('name', '—')}",
         f"• Возраст: {payload.get('age', '—')}",
         f"• Пол: {payload.get('gender', '—')}",
@@ -215,7 +215,7 @@ def _build_full_report_text(payload: dict[str, object], calculations: dict[str, 
 
 def _build_full_admin_report_text(payload: dict[str, object], calculations: dict[str, object]) -> str:
     lines = [
-        "📋 Полная анкета",
+        "📋 Расширенная анкета здоровья",
         f"• Имя: {payload.get('name', '—')}",
         f"• Возраст: {payload.get('age', '—')}",
         f"• Пол: {payload.get('gender', '—')}",
@@ -344,7 +344,7 @@ async def start_quick_diagnostics(callback: CallbackQuery, state: FSMContext) ->
     await state.update_data(flow="quick")
     await state.set_state(QuickDiagnosticsStates.waiting_for_name)
     await callback.message.answer(
-        "Быстрая диагностика. Шаг 1/13: Как вас зовут?",
+        "Экспресс-расчёт метрик. Шаг 1/13: Как вас зовут?",
         reply_markup=get_scenario_nav_keyboard(),
     )
     await callback.answer()
@@ -357,7 +357,7 @@ async def quick_back_to_start(message: Message, state: FSMContext) -> None:
     await state.update_data(flow="quick")
     await state.set_state(QuickDiagnosticsStates.waiting_for_name)
     await message.answer(
-        "Возвращаю к началу быстрой диагностики. Шаг 1/13: Как вас зовут?",
+        "Возвращаю к началу экспресс-расчёта. Шаг 1/13: Как вас зовут?",
         reply_markup=get_scenario_nav_keyboard(),
     )
 
@@ -653,7 +653,7 @@ async def start_full_questionnaire(callback: CallbackQuery, state: FSMContext) -
     await state.clear()
     await state.set_state(FullQuestionnaireStates.waiting_for_name)
     await callback.message.answer(
-        "Полная анкета. Шаг 1/18: Как вас зовут?",
+        "Расширенная анкета здоровья. Шаг 1/18: Как вас зовут?",
         reply_markup=get_scenario_nav_keyboard(),
     )
     await callback.answer()
@@ -665,7 +665,7 @@ async def full_back_to_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(FullQuestionnaireStates.waiting_for_name)
     await message.answer(
-        "Возвращаю к началу полной анкеты. Шаг 1/18: Как вас зовут?",
+        "Возвращаю к началу расширенной анкеты. Шаг 1/18: Как вас зовут?",
         reply_markup=get_scenario_nav_keyboard(),
     )
 

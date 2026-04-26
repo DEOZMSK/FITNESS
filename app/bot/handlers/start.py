@@ -14,6 +14,7 @@ from app.bot.keyboards import (
     BUTTON_DIAGNOSTICS,
     BUTTON_HOME_MENU,
     get_contact_trainer_keyboard,
+    get_diagnostics_menu_keyboard,
     get_main_menu_keyboard,
 )
 
@@ -73,6 +74,10 @@ async def open_about_by_text(message: Message) -> None:
 @router.message(F.text == BUTTON_DIAGNOSTICS)
 async def open_diagnostics_by_text(message: Message) -> None:
     """Open diagnostics section from reply keyboard."""
+    await message.answer(
+        "Открываю раздел диагностики. Кнопка «Обо мне» скрыта, вместо неё доступна «Мои результаты».",
+        reply_markup=get_diagnostics_menu_keyboard(),
+    )
     await show_diagnostics_menu_message(message)
 
 @router.message(F.text.in_({BUTTON_CONTACT, BUTTON_CONTACT_ALT}))
