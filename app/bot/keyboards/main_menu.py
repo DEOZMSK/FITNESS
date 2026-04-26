@@ -23,8 +23,8 @@ BUTTON_NO = "Нет"
 BUTTON_DONT_KNOW = "Не знаю"
 BUTTON_KEEP = "✅ Оставить"
 BUTTON_REENTER = "✏️ Ввести заново"
-BUTTON_CONSULT_YES = "Да, хочу задать вопрос"
-BUTTON_CONSULT_NO = "Пока нет"
+BUTTON_CONSULT_YES = "✍️ Задать вопрос"
+BUTTON_CONSULT_NO = "⏭️ Пропустить"
 
 
 def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
