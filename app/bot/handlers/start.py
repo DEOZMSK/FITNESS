@@ -1,23 +1,20 @@
-"""Start command handler with main inline menu."""
+"""Start command handler with main reply menu."""
 
 from aiogram import F, Router
 from aiogram.filters import CommandStart
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, Message
+
+from app.bot.handlers.about import build_contacts_text, show_about_menu_message
+from app.bot.handlers.diagnostics import show_diagnostics_menu_message
+from app.bot.keyboards import (
+    BUTTON_ABOUT,
+    BUTTON_CONTACT,
+    BUTTON_DIAGNOSTICS,
+    BUTTON_RESULTS,
+    get_main_menu_keyboard,
+)
 
 router = Router(name=__name__)
-
-
-def _start_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="👩‍🏫 Обо мне", callback_data="about:menu")],
-            [
-                InlineKeyboardButton(
-                    text="🧪 Фитнес-диагностика", callback_data="diag:start"
-                )
-            ],
-        ]
-    )
 
 
 @router.message(CommandStart())
@@ -25,7 +22,7 @@ async def cmd_start(message: Message) -> None:
     """Reply to /start command."""
     await message.answer(
         "Добро пожаловать! Выберите нужный раздел:",
-        reply_markup=_start_keyboard(),
+        reply_markup=get_main_menu_keyboard(),
     )
 
 
@@ -36,8 +33,35 @@ async def back_to_start_menu(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    await callback.message.edit_text(
+    await callback.message.answer(
         "Добро пожаловать! Выберите нужный раздел:",
-        reply_markup=_start_keyboard(),
+        reply_markup=get_main_menu_keyboard(),
     )
     await callback.answer()
+
+
+@router.message(F.text == BUTTON_ABOUT)
+async def open_about_by_text(message: Message) -> None:
+    """Open about section from reply keyboard."""
+    await show_about_menu_message(message)
+
+
+@router.message(F.text == BUTTON_DIAGNOSTICS)
+async def open_diagnostics_by_text(message: Message) -> None:
+    """Open diagnostics section from reply keyboard."""
+    await show_diagnostics_menu_message(message)
+
+
+@router.message(F.text == BUTTON_RESULTS)
+async def open_results_by_text(message: Message) -> None:
+    """Open user's results section from reply keyboard."""
+    await message.answer(
+        "📊 Раздел «Мои результаты» пока в разработке. "
+        "После прохождения диагностики результаты будут доступны здесь."
+    )
+
+
+@router.message(F.text == BUTTON_CONTACT)
+async def open_contact_by_text(message: Message) -> None:
+    """Open trainer contact section from reply keyboard."""
+    await message.answer(build_contacts_text())

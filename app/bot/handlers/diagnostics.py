@@ -60,6 +60,14 @@ async def _get_or_create_user_id(message: Message) -> int:
     )
 
 
+async def show_diagnostics_menu_message(message: Message) -> None:
+    """Open diagnostics menu from reply keyboard command."""
+    await message.answer(
+        "🧪 Фитнес-диагностика\n\nВыберите формат прохождения:",
+        reply_markup=_diag_menu_keyboard(),
+    )
+
+
 @router.callback_query(F.data == "diag:start")
 async def show_diagnostics_menu(callback: CallbackQuery) -> None:
     """Open diagnostics menu."""
