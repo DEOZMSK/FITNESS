@@ -2,14 +2,17 @@
 
 from aiogram import F, Router
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.handlers.about import build_contacts_text, show_about_menu_message
 from app.bot.handlers.diagnostics import show_diagnostics_menu_message
 from app.bot.keyboards import (
     BUTTON_ABOUT,
+    BUTTON_CANCEL,
     BUTTON_CONTACT,
     BUTTON_DIAGNOSTICS,
+    BUTTON_HOME_MENU,
     BUTTON_RESULTS,
     get_main_menu_keyboard,
 )
@@ -22,6 +25,26 @@ async def cmd_start(message: Message) -> None:
     """Reply to /start command."""
     await message.answer(
         "Добро пожаловать! Выберите нужный раздел:",
+        reply_markup=get_main_menu_keyboard(),
+    )
+
+
+@router.message(F.text == BUTTON_HOME_MENU)
+async def go_home_from_any_state(message: Message, state: FSMContext) -> None:
+    """Global handler for returning user to the main menu."""
+    await state.clear()
+    await message.answer(
+        "Возвращаю в главное меню.",
+        reply_markup=get_main_menu_keyboard(),
+    )
+
+
+@router.message(F.text == BUTTON_CANCEL)
+async def cancel_from_any_state(message: Message, state: FSMContext) -> None:
+    """Global handler for canceling any active flow."""
+    await state.clear()
+    await message.answer(
+        "Сценарий отменён. Возвращаю в главное меню.",
         reply_markup=get_main_menu_keyboard(),
     )
 
