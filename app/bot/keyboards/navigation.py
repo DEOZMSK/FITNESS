@@ -8,35 +8,11 @@ BUTTON_CANCEL = "❌ Отмена"
 BUTTON_SKIP = "Пропустить"
 
 
-def get_scenario_nav_keyboard() -> ReplyKeyboardMarkup:
-    """Keyboard with common scenario navigation actions."""
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=BUTTON_BACK), KeyboardButton(text=BUTTON_CANCEL)],
-            [KeyboardButton(text=BUTTON_HOME_MENU)],
-        ],
-        resize_keyboard=True,
-    )
-
-
 def get_scenario_skip_keyboard() -> ReplyKeyboardMarkup:
-    """Keyboard with skip action for optional steps."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=BUTTON_SKIP)],
-            [KeyboardButton(text=BUTTON_BACK), KeyboardButton(text=BUTTON_CANCEL)],
-            [KeyboardButton(text=BUTTON_HOME_MENU)],
-        ],
-        resize_keyboard=True,
-    )
-
-
-def get_scenario_my_data_keyboard() -> ReplyKeyboardMarkup:
-    """Keyboard for flows where going back is not needed."""
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📊 Мои результаты"), KeyboardButton(text=BUTTON_CANCEL)],
-            [KeyboardButton(text=BUTTON_HOME_MENU)],
+            [KeyboardButton(text=BUTTON_CANCEL), KeyboardButton(text=BUTTON_HOME_MENU)],
         ],
         resize_keyboard=True,
     )

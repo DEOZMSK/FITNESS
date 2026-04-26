@@ -1,7 +1,23 @@
 """FSM states package."""
 
-from .diagnostics import BodyCalculatorsStates, QuickDiagnosticsStates
+from .diagnostics import (
+    BodyCalculatorsStates,
+    CaliperStates,
+    CaloriesStates,
+    ContraindicationsStates,
+    FlexibilityStates,
+    QuickDiagnosticsStates,
+)
 from .donate import DonateStates
 from .questionnaire import FullQuestionnaireStates
 
-__all__ = ("DonateStates", "QuickDiagnosticsStates", "BodyCalculatorsStates", "FullQuestionnaireStates")
+__all__ = (
+    "DonateStates",
+    "QuickDiagnosticsStates",
+    "BodyCalculatorsStates",
+    "CaloriesStates",
+    "CaliperStates",
+    "FlexibilityStates",
+    "ContraindicationsStates",
+    "FullQuestionnaireStates",
+)

@@ -1,145 +1,66 @@
-"""Handlers for viewing user diagnosis results."""
-
-from __future__ import annotations
-
-from datetime import datetime
+"""Handlers for showing current saved profile (Мои данные)."""
 
 from aiogram import F, Router
 from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 
-from app.bot.handlers.diagnostics import show_diagnostics_menu_message
-from app.bot.handlers.about import build_contacts_text
-from app.bot.keyboards import BUTTON_HOME_MENU, BUTTON_RESULTS, get_contact_trainer_keyboard
+from app.bot.keyboards import (
+    BUTTON_BODY_CALC,
+    BUTTON_CALORIES,
+    BUTTON_CONTACT,
+    BUTTON_FINAL_REPORT,
+    BUTTON_HOME_MENU,
+    BUTTON_MY_DATA,
+    BUTTON_PROFILE_START,
+    get_main_menu_keyboard,
+)
 from app.db import Database
 
 router = Router(name=__name__)
 
-BUTTON_RESTART_DIAG = "🔁 Пройти заново"
-BUTTON_CONTACT_ALT = "💬 Написать тренеру"
 
-
-def _results_actions_keyboard() -> ReplyKeyboardMarkup:
+def _profile_actions_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=BUTTON_RESTART_DIAG), KeyboardButton(text=BUTTON_CONTACT_ALT)],
-            [KeyboardButton(text=BUTTON_HOME_MENU)],
+            [KeyboardButton(text="✏️ Обновить данные"), KeyboardButton(text=BUTTON_BODY_CALC)],
+            [KeyboardButton(text=BUTTON_CALORIES), KeyboardButton(text=BUTTON_FINAL_REPORT)],
+            [KeyboardButton(text=BUTTON_CONTACT), KeyboardButton(text=BUTTON_HOME_MENU)],
         ],
         resize_keyboard=True,
     )
 
 
-def _format_created_at(raw_value: object) -> str:
-    if not isinstance(raw_value, str):
-        return "—"
-    try:
-        return datetime.strptime(raw_value, "%Y-%m-%d %H:%M:%S").strftime("%d.%m.%Y %H:%M")
-    except ValueError:
-        return raw_value
-
-
-def _build_results_text(payload: dict[str, object], calculations: dict[str, object], created_at: object) -> str:
-    def _metric_value(key: str, status_key: str | None = None, suffix: str = "") -> str:
-        value = calculations.get(key)
-        if value is None:
-            return "не рассчитывался в этом сценарии"
-        if status_key:
-            status = calculations.get(status_key)
-            if status is None:
-                return f"{value}{suffix}"
-            return f"{value}{suffix} ({status})"
-        return f"{value}{suffix}"
-
-    macros = calculations.get("macros")
-    if isinstance(macros, dict):
-        bju_value = (
-            f"Б {macros.get('protein_g', '—')} г / "
-            f"Ж {macros.get('fat_g', '—')} г / "
-            f"У {macros.get('carbs_g', '—')} г"
-        )
-    else:
-        bju_value = "не рассчитывался в этом сценарии"
-
-    lines = [
-        "📊 <b>Ваши последние результаты</b>",
-        f"📅 Дата: {_format_created_at(created_at)}",
-        "",
-        "📈 <b>Ключевые метрики</b>",
-        f"• ИМТ (BMI): {_metric_value('bmi', 'bmi_status')}",
-        f"• WHR: {_metric_value('whr', 'whr_status')}",
-        f"• BMR: {_metric_value('bmr', suffix=' ккал/сутки')}",
-        f"• БЖУ: {bju_value}",
-        f"• Идеальный вес: {_metric_value('ideal_weight_kg', suffix=' кг')}",
-        f"• Цель: {payload.get('goal', '—')}",
-    ]
-
-    health = payload.get("health")
-    stop_factors = payload.get("stop_factors")
-    restrictions_line = "• Ограничения: "
-
-    if isinstance(stop_factors, list) and stop_factors:
-        restrictions_line += ", ".join(str(factor) for factor in stop_factors)
-    elif isinstance(health, str) and health.strip():
-        restrictions_line += health.strip()
-    else:
-        restrictions_line += "не указаны"
-
-    lines.extend(["", "⚠️ <b>Ограничения</b>", restrictions_line])
-    lines.extend(
-        [
-            "",
-            "ℹ️ <b>Что означают метрики</b>",
-            "• ИМТ (BMI): соотношение роста и веса, общий ориентир по массе тела.",
-            "• WHR: отношение талии к бёдрам, косвенный индикатор распределения жира.",
-            "• BMR: базовый обмен — энергия, которую организм тратит в покое.",
-            "• БЖУ: суточное распределение белков, жиров и углеводов.",
-            "• Идеальный вес: ориентировочный диапазон/оценка по формулам, не медицинский диагноз.",
-        ]
-    )
-    return "\n".join(lines)
-
-
-@router.message(F.text == BUTTON_RESULTS)
-async def show_latest_results(message: Message) -> None:
-    if not message.from_user:
-        await message.answer("Не удалось определить пользователя. Попробуйте позже.")
-        return
-
+@router.message(F.text == BUTTON_MY_DATA)
+async def show_my_data(message: Message) -> None:
     db = Database()
-    user_id = db.upsert_user(
-        telegram_id=message.from_user.id,
-        username=message.from_user.username,
-        first_name=message.from_user.first_name,
-        last_name=message.from_user.last_name,
-    )
-    latest_result = db.get_latest_diagnosis_result(user_id=user_id)
-
-    if latest_result is None:
+    profile = db.get_diagnostic_profile_by_telegram_id(message.from_user.id)
+    if not profile:
         await message.answer(
-            "Результатов пока нет. Пройдите диагностику — и я покажу отчёт здесь.",
-            reply_markup=_results_actions_keyboard(),
+            "Вы ещё не заполнили данные. Нажмите «🚀 Начать / обновить данные», чтобы бот смог сделать расчёты.",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text=BUTTON_PROFILE_START)], [KeyboardButton(text=BUTTON_HOME_MENU)]],
+                resize_keyboard=True,
+            ),
         )
         return
 
-    payload = latest_result.get("session_payload", {})
-    calculations = latest_result.get("calculation_payload", {})
-    saved_user_report_text = latest_result.get("user_report_text")
-    if isinstance(saved_user_report_text, str) and saved_user_report_text.strip():
-        date_line = f"📅 Дата: {_format_created_at(latest_result.get('session_created_at'))}"
-        text = f"📊 <b>Ваши последние результаты</b>\n{date_line}\n\n{saved_user_report_text}"
-    else:
-        text = _build_results_text(
-            payload=payload if isinstance(payload, dict) else {},
-            calculations=calculations if isinstance(calculations, dict) else {},
-            created_at=latest_result.get("session_created_at"),
-        )
-    await message.answer(text, reply_markup=_results_actions_keyboard())
+    text = (
+        "👤 Ваши данные:\n"
+        f"Имя: {profile.get('full_name') or '—'}\n"
+        f"Пол: {profile.get('sex') or '—'}\n"
+        f"Возраст: {profile.get('age') or '—'}\n"
+        f"Рост: {profile.get('height_cm') or '—'}\n"
+        f"Вес: {profile.get('weight_kg') or '—'}\n"
+        f"Талия: {profile.get('waist_cm') or '—'}\n"
+        f"Бёдра: {profile.get('hips_cm') or '—'}\n"
+        f"Грудь: {profile.get('chest_cm') or '—'}\n"
+        f"Запястье: {profile.get('wrist_cm') or '—'}\n"
+        f"Рост сидя: {profile.get('sitting_height_cm') or '—'}\n"
+        f"Цель: {profile.get('goal') or '—'}\n"
+        f"Ограничения: {profile.get('health_notes') or '—'}"
+    )
+    await message.answer(text, reply_markup=_profile_actions_keyboard())
 
 
-@router.message(F.text == BUTTON_RESTART_DIAG)
-async def restart_diagnostics_from_results(message: Message) -> None:
-    await show_diagnostics_menu_message(message)
-
-
-@router.message(F.text == BUTTON_CONTACT_ALT)
-async def open_contact_from_results(message: Message) -> None:
-    await message.answer(build_contacts_text(), reply_markup=get_contact_trainer_keyboard())
+@router.message(F.text == "✏️ Обновить данные")
+async def refresh_profile(message: Message) -> None:
+    await message.answer("Нажмите «🚀 Начать / обновить данные» в разделе диагностики.", reply_markup=get_main_menu_keyboard())
