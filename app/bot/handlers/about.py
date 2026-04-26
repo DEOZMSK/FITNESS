@@ -86,6 +86,7 @@ async def show_profile(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
         text,
         reply_markup=_about_back_keyboard(),
+        parse_mode="HTML",
     )
     await callback.answer()
 
@@ -114,6 +115,7 @@ async def show_services(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
         text,
         reply_markup=_about_back_keyboard(),
+        parse_mode="HTML",
     )
     await callback.answer()
 
@@ -137,6 +139,7 @@ async def show_reviews(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
         text,
         reply_markup=_about_back_keyboard(),
+        parse_mode="HTML",
     )
     await callback.answer()
 
@@ -151,6 +154,7 @@ async def show_contacts(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
         build_contacts_text(),
         reply_markup=_about_back_keyboard(),
+        parse_mode="HTML",
     )
     await callback.answer()
 
