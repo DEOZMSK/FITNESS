@@ -25,6 +25,7 @@ def _resolve_welcome_video_path() -> Path | None:
     """Return first existing welcome video path."""
     root_dir = Path(__file__).resolve().parents[3]
     candidates = (
+        Path("/data/1st.mp4"),
         root_dir / "data" / "1st.mp4",
         root_dir / "app" / "data" / "1st.mp4",
     )
