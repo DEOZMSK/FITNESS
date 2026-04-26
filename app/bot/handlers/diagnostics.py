@@ -53,18 +53,22 @@ from app.calculators.body_metrics import (
     limb_index,
     limb_index_interpretation,
     somatotype,
+    waist_to_height_interpretation,
+    waist_to_height_ratio,
     whr,
     whr_interpretation,
 )
-from app.calculators.calories import bju_distribution, tdc
-from app.config import load_settings
+from app.calculators.calories import bmr_mifflin_st_jeor, goal_calories, goal_macros, tdc
+from app.data.contraindications import SAFE_STOP_MESSAGE, STOP_FACTORS
 from app.db import Database
+from app.services import send_diagnostics_summary
 
 router = Router(name=__name__)
 logger = logging.getLogger(__name__)
 
 GOALS = [
     "Похудеть",
+    "Рекомпозиция тела",
     "Улучшить здоровье",
     "Начать тренироваться с нуля",
     "Подтянуть тело",
@@ -129,6 +133,31 @@ GOAL_TYPE_TEXTS = {
             "как снижать вес без потери мышц и энергии;",
         ],
     },
+    "recomposition": {
+        "title": "провести рекомпозицию тела",
+        "plain": (
+            "Вам нужен режим, при котором снижается доля жира без фокуса на резком снижении веса. "
+            "Для этого важны силовые тренировки, достаточный белок и контроль талии."
+        ),
+        "calories_details": "Обычно старт — от поддержания до небольшого дефицита (около 5%).",
+        "calories_hint": "Если талия не уменьшается 2–3 недели, калорийность стоит пересмотреть.",
+        "macros_hint": (
+            "Белок и силовые — приоритет. Это помогает сохранять мышцы, пока уменьшается жировая масса."
+        ),
+        "attention_items": [
+            "Ориентируйтесь не только на вес, но и на талию, силу и фото-прогресс.",
+            "Слишком большой дефицит ухудшает восстановление и снижает результат тренировок.",
+            "Регулярность важнее идеального плана «на бумаге».",
+        ],
+        "pain_point": (
+            "Частая ошибка — пытаться одновременно «жёстко сушиться» и прогрессировать в силовых. "
+            "Лучше идти умеренно и стабильно."
+        ),
+        "trainer_extra": [
+            "как сочетать дефицит и рост силы без перегруза;",
+            "какие метрики отслеживать каждую неделю;",
+        ],
+    },
     "maintenance": {
         "title": "удержать форму",
         "plain": (
@@ -179,6 +208,16 @@ GOAL_TYPE_TEXTS = {
             "понятные тренировки, питание и восстановление."
         ),
         "trainer_extra": [],
+    },
+    "consultation_only": {
+        "title": "перейти на консультационный маршрут",
+        "plain": "По текущим вводным обычные рекомендации по питанию и нагрузке выдавать небезопасно.",
+        "calories_details": "Сначала нужен медицинский/тренерский допуск.",
+        "calories_hint": "После консультации можно вернуться к точному расчёту.",
+        "macros_hint": "БЖУ и калории будут рассчитаны после уточнения рисков.",
+        "attention_items": ["Не запускайте самостоятельный жёсткий план до консультации."],
+        "pain_point": "Игнорирование красных флагов повышает риск осложнений.",
+        "trainer_extra": ["какие обследования и ограничения важны перед стартом."],
     },
 }
 ACTIVITY_OPTIONS = [
@@ -238,7 +277,9 @@ def _parse_pressure(raw: str) -> tuple[int, int] | None:
         s, d = int(parts[0]), int(parts[1])
     except ValueError:
         return None
-    if not (70 <= s <= 260 and 40 <= d <= 160):
+    if not (80 <= s <= 250 and 40 <= d <= 150):
+        return None
+    if s - d < 10:
         return None
     return s, d
 
@@ -263,6 +304,8 @@ def _normalize_goal(goal_text: str | None) -> str:
         "похудеть": "fat_loss",
         "снизить вес": "fat_loss",
         "снижение веса": "fat_loss",
+        "рекомпозиция тела": "recomposition",
+        "уменьшить жир без фокуса на весах": "recomposition",
         "поддерживать форму": "maintenance",
         "поддержание формы": "maintenance",
         "удержать форму": "maintenance",
@@ -277,36 +320,85 @@ def _normalize_goal(goal_text: str | None) -> str:
 
 
 def _calculate_goal_calories(tdee_value: float, goal_type: str) -> int:
-    if goal_type == "muscle_gain":
-        return _round_calories(tdee_value * 1.1)
-    if goal_type == "fat_loss":
-        return _round_calories(tdee_value * 0.85)
-    return _round_calories(tdee_value)
+    return goal_calories(tdee_value=tdee_value, goal_type=goal_type)
 
 
 def _goal_macros(weight_kg: float, target_calories: int, goal_type: str) -> dict[str, int]:
-    if goal_type == "muscle_gain":
-        protein = weight_kg * 1.8
-        fat = weight_kg * 0.9
-    elif goal_type == "fat_loss":
-        protein = weight_kg * 2.0
-        fat = weight_kg * 0.8
-    else:
-        protein = weight_kg * 1.6
-        fat = weight_kg * 0.9
+    return goal_macros(weight_kg=weight_kg, target_calories=target_calories, goal_type=goal_type)
 
-    protein_cals = protein * 4
-    fat_cals = fat * 9
-    carbs = (target_calories - protein_cals - fat_cals) / 4
-    if carbs < 0:
-        logger.warning("Calculated negative carbs, fallback to 30g: goal=%s target_calories=%s", goal_type, target_calories)
-        carbs = 30.0
 
-    return {
-        "protein_g": int(round(protein)),
-        "fat_g": int(round(fat)),
-        "carbs_g": int(round(carbs)),
-    }
+def _extract_pressure_value(pressure_text: str | None) -> tuple[int, int] | None:
+    if not pressure_text:
+        return None
+    return _parse_pressure(pressure_text)
+
+
+def _contains_stop_factor(text: str | None) -> list[str]:
+    if not text:
+        return []
+    normalized = text.lower()
+    return [item for item in STOP_FACTORS if item in normalized]
+
+
+def _resolve_goal_with_contradictions(profile: dict, payload: dict) -> tuple[str, str, list[str]]:
+    goal_original = _normalize_goal(profile.get("goal"))
+    resolved = goal_original
+    notes: list[str] = []
+
+    age = int(profile.get("age") or 0)
+    bmi_value = float(payload["bmi"])
+    whtr_value = float(payload["whtr"])
+
+    if age < 18:
+        notes.append("Возраст < 18: взрослая калорийная схема отключена.")
+        return "consultation_only", goal_original, notes
+
+    if bmi_value < 18.5 and goal_original == "fat_loss":
+        resolved = "maintenance"
+        notes.append("Цель «похудеть» конфликтует с дефицитом массы. Переведено на поддержание.")
+
+    if goal_original == "muscle_gain" and (bmi_value >= 30 or whtr_value >= 0.6):
+        resolved = "recomposition"
+        notes.append("Обычный профицит конфликтует с текущими метриками. Выбрана рекомпозиция.")
+
+    return resolved, goal_original, notes
+
+
+def _detect_stop_level(profile: dict, payload: dict) -> tuple[str, list[str]]:
+    risk_flags: list[str] = []
+    hard_reasons: list[str] = []
+    soft_reasons: list[str] = []
+
+    pressure = _extract_pressure_value(profile.get("pressure_text"))
+    if pressure:
+        systolic, diastolic = pressure
+        if systolic >= 180 or diastolic >= 120:
+            hard_reasons.append(f"Кризисное давление: {systolic}/{diastolic}")
+        elif systolic >= 140 or diastolic >= 90:
+            soft_reasons.append(f"Повышенное давление: {systolic}/{diastolic}")
+
+    pregnancy = str(profile.get("pregnancy_status") or "").lower()
+    if pregnancy == "да":
+        soft_reasons.append("Беременность: нужен осторожный маршрут без агрессивного дефицита.")
+
+    health_notes = str(profile.get("health_notes") or "")
+    matched_stop_factors = _contains_stop_factor(health_notes)
+    if matched_stop_factors:
+        hard_reasons.append("Найдены стоп-факторы: " + ", ".join(matched_stop_factors))
+
+    if float(payload["whtr"]) >= 0.6:
+        risk_flags.append("WHtR>=0.60")
+    elif float(payload["whtr"]) >= 0.5:
+        risk_flags.append("WHtR>=0.50")
+
+    if float(payload["whr"]) >= (0.9 if profile.get("sex") == "мужчина" else 0.85):
+        risk_flags.append("Повышенный WHR")
+
+    if hard_reasons:
+        return "hard_stop", [*risk_flags, *hard_reasons]
+    if soft_reasons:
+        return "soft_stop", [*risk_flags, *soft_reasons]
+    return "none", risk_flags
 
 
 def _client_data_block(profile: dict, goal_text: str) -> list[str]:
@@ -330,6 +422,7 @@ def _metrics_interpretation_block(payload: dict) -> list[str]:
         f"ИМТ: {round(payload['bmi'], 2):.2f} — {payload['bmi_status'].lower()}",
         f"Тип телосложения: {payload['body_type']}.",
         f"Соотношение талии и бёдер: {round(payload['whr'], 2):.2f}.",
+        f"Соотношение талии и роста: {round(payload['whtr'], 2):.2f} — {payload['whtr_status'].lower()}.",
         "",
         "<b>Что это значит:</b>",
         "Это стартовая картина по телосложению и текущему состоянию. "
@@ -596,12 +689,17 @@ async def q_weight(message: Message, state: FSMContext) -> None:
 
 @router.message(QuickDiagnosticsStates.waiting_for_waist)
 async def q_waist(message: Message, state: FSMContext) -> None:
-    value = _validate_number(message.text, 40, 200)
+    value = _validate_number(message.text, 45, 200)
     if value is None:
         await message.answer(get_input_error_text("number"))
         return
     if value == -1:
         await message.answer(get_input_error_text("waist_format"))
+        return
+    data = await state.get_data()
+    height_cm = float(data.get("height_cm") or 0)
+    if height_cm and value > (height_cm * 0.9):
+        await message.answer("Значение талии выглядит маловероятно. Проверьте замер и введите ещё раз.")
         return
     await state.update_data(waist_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_hips)
@@ -610,7 +708,7 @@ async def q_waist(message: Message, state: FSMContext) -> None:
 
 @router.message(QuickDiagnosticsStates.waiting_for_hips)
 async def q_hips(message: Message, state: FSMContext) -> None:
-    value = _validate_number(message.text, 40, 220)
+    value = _validate_number(message.text, 60, 220)
     if value is None:
         await message.answer(get_input_error_text("number"))
         return
@@ -618,6 +716,9 @@ async def q_hips(message: Message, state: FSMContext) -> None:
         await message.answer(get_input_error_text("hips_format"))
         return
     data = await state.get_data()
+    if value < float(data["waist_cm"]) * 0.7:
+        await message.answer("Проверьте замер бёдер: соотношение с талией выглядит необычно.")
+        return
     if value < float(data["waist_cm"]):
         await state.update_data(pending_hips=value)
         await state.set_state(QuickDiagnosticsStates.waiting_for_hips_confirmation)
@@ -660,7 +761,7 @@ async def q_chest(message: Message, state: FSMContext) -> None:
 
 @router.message(QuickDiagnosticsStates.waiting_for_wrist)
 async def q_wrist(message: Message, state: FSMContext) -> None:
-    value = _validate_number(message.text, 10, 30)
+    value = _validate_number(message.text, 10, 25)
     if value is None:
         await message.answer(get_input_error_text("number"))
         return
@@ -687,6 +788,11 @@ async def q_sitting(message: Message, state: FSMContext) -> None:
             return
         if value == -1:
             await message.answer(get_input_error_text("number"))
+            return
+        data = await state.get_data()
+        standing = float(data.get("height_cm") or 0)
+        if standing and value >= standing:
+            await message.answer("Рост сидя не может быть равен или выше роста стоя. Лучше пропустите этот шаг.")
             return
         await state.update_data(sitting_height_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_goal)
@@ -823,14 +929,21 @@ def _calculate_payload(profile: dict) -> dict:
     chest_idx = chest_index(profile["chest_cm"], profile["height_cm"])
     limb_idx = limb_index(profile["height_cm"], profile.get("sitting_height_cm"))
     body_whr = whr(profile["waist_cm"], profile["hips_cm"])
+    body_whtr = waist_to_height_ratio(profile["waist_cm"], profile["height_cm"])
     ideal = ideal_weight_by_body_type(profile["height_cm"], profile["sex"], body_type)
 
-    sex_coeff = 1.0 if profile["sex"] == "мужчина" else 0.9
-    bmr_value = round(sex_coeff * profile["weight_kg"] * 24 * 0.95, 2)
+    bmr_value = bmr_mifflin_st_jeor(
+        weight_kg=profile["weight_kg"],
+        height_cm=profile["height_cm"],
+        age=int(profile["age"]),
+        sex=profile["sex"],
+    )
     tdc_value = tdc(bmr_value, ACTIVITY_COEFFS[profile["activity_level"]])
-    macros = bju_distribution(tdc_value=tdc_value, protein_share=0.2, fat_share=0.3)
+    baseline_macros = _goal_macros(profile["weight_kg"], _round_calories(tdc_value), "maintenance")
 
     return {
+        "formula_version": "2026.04.mifflin.v1",
+        "measurement_protocol_version": "2026.04.midpoint-waist.v1",
         "bmi": body_bmi,
         "bmi_status": bmi_interpretation(body_bmi, int(profile["age"])),
         "body_type": body_type,
@@ -841,9 +954,11 @@ def _calculate_payload(profile: dict) -> dict:
         "ideal_weight": ideal,
         "whr": body_whr,
         "whr_status": whr_interpretation(body_whr, profile["sex"]),
+        "whtr": body_whtr,
+        "whtr_status": waist_to_height_interpretation(body_whtr),
         "bmr": bmr_value,
         "tdc": tdc_value,
-        "macros": macros,
+        "macros": baseline_macros,
     }
 
 
@@ -853,11 +968,19 @@ def _ideal_weight_text(ideal_weight: float | tuple[float, float, float]) -> str:
     return f"{_safe_number(ideal_weight)} кг"
 
 
-def _build_report_text(profile: dict, payload: dict) -> str:
+def _build_report_text(
+    profile: dict,
+    payload: dict,
+    *,
+    goal_type: str,
+    goal_original: str,
+    decision_notes: list[str],
+    stop_level: str,
+    risk_flags: list[str],
+) -> str:
     goal_text = profile.get("goal") or "—"
-    goal_type = _normalize_goal(goal_text)
-    target_calories = _calculate_goal_calories(payload["tdc"], goal_type)
-    macros = _goal_macros(profile["weight_kg"], target_calories, goal_type)
+    target_calories = _calculate_goal_calories(payload["tdc"], goal_type) if goal_type != "consultation_only" else 0
+    macros = _goal_macros(profile["weight_kg"], target_calories, goal_type) if goal_type != "consultation_only" else {"protein_g": 0, "fat_g": 0, "carbs_g": 0}
 
     blocks = [
         _client_data_block(profile, goal_text),
@@ -874,43 +997,32 @@ def _build_report_text(profile: dict, payload: dict) -> str:
     parts = []
     for block in blocks:
         parts.append("\n".join(block))
-    return get_final_report_text(profile, {
+    report = get_final_report_text(profile, {
         "goal_block": parts[1],
         "metrics_block": parts[2],
-        "calories_block": parts[3],
-        "macros_block": parts[4],
+        "calories_block": parts[3] if goal_type != "consultation_only" else "⚠️ Расчёт калорий отключён до консультации.",
+        "macros_block": parts[4] if goal_type != "consultation_only" else "⚠️ Расчёт БЖУ отключён до консультации.",
         "attention_block": parts[5] + "\n\n" + parts[6],
         "pain_point_block": parts[7],
     })
+    extra = [
+        f"🧭 <b>Финальная цель:</b> {goal_type}",
+        f"🧾 <b>Исходная цель:</b> {goal_original}",
+        f"🚦 <b>Уровень safety:</b> {stop_level}",
+    ]
+    if decision_notes:
+        extra.append("• " + "\n• ".join(decision_notes))
+    if risk_flags:
+        extra.append("Риски: " + "; ".join(risk_flags))
+    return report + "\n\n" + "\n".join(extra)
 
 
 def _build_admin_report(message: Message, profile: dict, payload: dict) -> str:
     username = f"@{message.from_user.username}" if message.from_user.username else "—"
     return (
-        "🧪 Новая фитнес-диагностика\n\n"
-        "Пользователь:\n"
-        f"Имя: {profile.get('full_name') or '—'}\n"
-        f"Telegram: {username}\n"
-        f"User ID: {message.from_user.id}\n\n"
-        "Данные:\n"
-        f"Пол: {_sex_label(profile.get('sex')) if profile.get('sex') else '—'}\n"
-        f"Возраст: {profile.get('age') or '—'}\n"
-        f"Рост/вес: {_safe_number(profile.get('height_cm'))} / {_safe_number(profile.get('weight_kg'))}\n"
-        f"Талия/бёдра: {_safe_number(profile.get('waist_cm'))} / {_safe_number(profile.get('hips_cm'))}\n"
-        f"Грудь: {_safe_number(profile.get('chest_cm'))}\n"
-        f"Запястье: {_safe_number(profile.get('wrist_cm'))}\n"
-        f"Цель: {profile.get('goal') or '—'}\n"
-        f"Активность: {profile.get('activity_level') or '—'}\n"
-        f"Ограничения: {profile.get('health_notes') or '—'}\n\n"
-        "Расчёты:\n"
-        f"ИМТ: {_safe_number(payload['bmi'])}\n"
-        f"Категория: {payload['bmi_status']}\n"
-        f"Ориентир по весу: {_ideal_weight_text(payload['ideal_weight'])}\n"
-        f"WHR: {_safe_number(payload['whr'])}\n"
-        f"Тип жироотложения: {payload['whr_status']}\n"
-        f"Тип телосложения: {payload['body_type']}\n\n"
-        "Контакт:\n"
-        "Пользователь может написать Лене: @Al0PBEDA"
+        "🧪 Новая фитнес-диагностика\n"
+        f"Meta: tg_user_id={message.from_user.id}; username={username}; "
+        f"goal_resolved={payload.get('goal_resolved', '—')}; stop_level={payload.get('stop_level', '—')}"
     )
 
 
@@ -949,7 +1061,36 @@ async def _finish_diagnostics(message: Message, state: FSMContext) -> None:
             return
         raise
     await message.answer(get_intermediate_processing_text())
-    report_text = _build_report_text(profile, payload)
+    goal_resolved, goal_original, decision_notes = _resolve_goal_with_contradictions(profile, payload)
+    stop_level, risk_flags = _detect_stop_level(profile, payload)
+    if stop_level == "hard_stop":
+        goal_resolved = "consultation_only"
+        decision_notes.append("Сработал hard stop: обычный фитнес-flow остановлен.")
+    elif stop_level == "soft_stop":
+        if goal_resolved == "fat_loss":
+            goal_resolved = "recomposition"
+            decision_notes.append("При soft stop агрессивный дефицит отключён, выбран более осторожный сценарий.")
+
+    report_text = _build_report_text(
+        profile,
+        payload,
+        goal_type=goal_resolved,
+        goal_original=goal_original,
+        decision_notes=decision_notes,
+        stop_level=stop_level,
+        risk_flags=risk_flags,
+    )
+
+    enriched_payload = {
+        **payload,
+        "goal_engine_version": "2026.04.guard.v1",
+        "report_version": "2026.04.unified-report.v1",
+        "goal_original": goal_original,
+        "goal_resolved": goal_resolved,
+        "risk_flags": risk_flags,
+        "stop_level": stop_level,
+        "decision_notes": decision_notes,
+    }
 
     db, user_id = await _user_context(message)
     db.upsert_diagnostic_profile(
@@ -961,26 +1102,50 @@ async def _finish_diagnostics(message: Message, state: FSMContext) -> None:
         },
         {
             **profile,
-            "latest_body_metrics_payload": payload,
+            "latest_body_metrics_payload": enriched_payload,
             "latest_calories_payload": {
-                "bmr": payload["bmr"],
-                "tdc": payload["tdc"],
-                "macros": payload["macros"],
+                "bmr": enriched_payload["bmr"],
+                "tdc": enriched_payload["tdc"],
+                "macros": enriched_payload["macros"],
+                "goal_original": goal_original,
+                "goal_resolved": goal_resolved,
+                "stop_level": stop_level,
             },
             "latest_report_text": report_text,
         },
     )
-    db.save_calculation_history(user_id, "unified_diagnostics", payload)
+    db.save_calculation_history(user_id, "unified_diagnostics", enriched_payload)
 
     await message.answer(report_text, reply_markup=get_contact_trainer_keyboard())
     await message.answer("Данные сохранены. Меню результатов:", reply_markup=get_post_diagnostics_keyboard())
     await state.clear()
 
-    admin_text = _build_admin_report(message, profile, payload)
+    admin_header = _build_admin_report(message, profile, enriched_payload)
+    payload_for_admin = {
+        **profile,
+        "goal": profile.get("goal"),
+        "flow": "quick",
+        "health": profile.get("health_notes"),
+        "pressure": profile.get("pressure_text"),
+        "calculations": enriched_payload,
+        "report_text": report_text,
+    }
     try:
-        await message.bot.send_message(load_settings().admin_id, admin_text)
+        await send_diagnostics_summary(
+            bot=message.bot,
+            user_id=user_id,
+            lead_id=0,
+            payload=payload_for_admin,
+            title=admin_header,
+            lead_type="diagnosis",
+            telegram_user_id=message.from_user.id,
+            telegram_username=message.from_user.username,
+        )
     except Exception:
-        pass
+        logger.exception("Admin notify failed for quick diagnostics user_id=%s", user_id)
+
+    if stop_level == "hard_stop":
+        await message.answer(SAFE_STOP_MESSAGE, reply_markup=get_contact_trainer_keyboard())
 
 
 @router.message(F.text == BUTTON_RESULT_MY_DATA)

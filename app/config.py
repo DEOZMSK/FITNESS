@@ -17,7 +17,20 @@ class Settings(BaseModel):
     shop_id: str
     secret_key: str
     admin_id: int = 5948629306
+    admin_ids: list[int] = [5948629306]
     database_path: str = "fitness.db"
+
+    @field_validator("admin_ids", mode="before")
+    @classmethod
+    def validate_admin_ids(cls, value: Any) -> list[int]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [int(v) for v in value]
+        if isinstance(value, str):
+            tokens = [token.strip() for token in value.split(",") if token.strip()]
+            return [int(token) for token in tokens]
+        raise ValueError("admin_ids must be CSV string or list")
 
     @field_validator("telegram_bot_token", "provider_token", "shop_id", "secret_key")
     @classmethod
@@ -30,12 +43,17 @@ class Settings(BaseModel):
 
 def _read_env() -> dict[str, Any]:
     """Read settings from environment variables."""
+    admin_ids = os.getenv("ADMIN_IDS", "").strip()
+    fallback_admin_id = os.getenv("ADMIN_ID", "5948629306").strip()
+    normalized_admin_ids = admin_ids or fallback_admin_id
+
     return {
         "telegram_bot_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
         "provider_token": os.getenv("PROVIDER_TOKEN", ""),
         "shop_id": os.getenv("SHOP_ID", ""),
         "secret_key": os.getenv("SECRET_KEY", ""),
-        "admin_id": os.getenv("ADMIN_ID", 5948629306),
+        "admin_id": fallback_admin_id,
+        "admin_ids": normalized_admin_ids,
         "database_path": os.getenv("DATABASE_PATH", "fitness.db"),
     }
 
@@ -55,6 +73,7 @@ def load_settings() -> Settings:
             "shop_id": "SHOP_ID",
             "secret_key": "SECRET_KEY",
             "admin_id": "ADMIN_ID",
+            "admin_ids": "ADMIN_IDS",
             "database_path": "DATABASE_PATH",
         }
 

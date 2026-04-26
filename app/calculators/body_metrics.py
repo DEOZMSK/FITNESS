@@ -209,9 +209,25 @@ def whr(waist_cm: float, hip_cm: float) -> float:
 
 def whr_interpretation(whr_value: float, sex: str) -> str:
     normalized_sex = _normalize_sex(sex)
-    threshold = 1.0 if normalized_sex == "male" else 0.85
+    threshold = 0.9 if normalized_sex == "male" else 0.85
     if abs(whr_value - threshold) <= 1e-9:
         return WHR_NEUTRAL_STATUS
     if whr_value > threshold:
         return "Абдоминальный тип жироотложения"
     return "Бедренно-ягодичный тип жироотложения"
+
+
+def waist_to_height_ratio(waist_cm: float, height_cm: float) -> float:
+    if height_cm <= 0:
+        raise ValueError("height_cm must be > 0")
+    return round(waist_cm / height_cm, 3)
+
+
+def waist_to_height_interpretation(whtr_value: float) -> str:
+    if whtr_value < 0.4:
+        return "Ниже стандартного диапазона"
+    if whtr_value < 0.5:
+        return "Нет повышенного риска"
+    if whtr_value < 0.6:
+        return "Повышенный риск"
+    return "Высокий риск"
