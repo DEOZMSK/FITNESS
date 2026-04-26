@@ -1,9 +1,12 @@
 """About router screens and donation FSM flow."""
 
+from pathlib import Path
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     CallbackQuery,
+    FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
@@ -19,18 +22,7 @@ from app.db import Database
 from app.services import DONATION_MIN_AMOUNT, create_invoice, send_payment_event
 
 router = Router(name=__name__)
-
-
-def _about_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="👩‍🏫 Обо мне", callback_data="about:profile")],
-            [InlineKeyboardButton(text="🛍 Услуги", callback_data="about:services")],
-            [InlineKeyboardButton(text="💬 Отзывы", callback_data="about:reviews")],
-            [InlineKeyboardButton(text="📞 Контакты", callback_data="about:contacts")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="start:menu")],
-        ]
-    )
+ABOUT_PHOTO_PATH = Path("/data/me.png")
 
 
 def _about_back_keyboard() -> InlineKeyboardMarkup:
@@ -108,25 +100,37 @@ def _build_about_text() -> str:
     return "\n\n".join(blocks)
 
 
-async def show_about_menu_message(message: Message) -> None:
-    """Show about menu from reply keyboard command."""
+async def _send_about_profile(message: Message) -> None:
+    about_text = _build_about_text()
+    if ABOUT_PHOTO_PATH.exists() and ABOUT_PHOTO_PATH.is_file():
+        await message.answer_photo(
+            photo=FSInputFile(ABOUT_PHOTO_PATH),
+            caption=about_text,
+            reply_markup=get_contact_trainer_keyboard(),
+            parse_mode="HTML",
+        )
+        return
+
     await message.answer(
-        "Раздел «Обо мне». Выберите, что показать:",
-        reply_markup=_about_menu_keyboard(),
+        about_text,
+        reply_markup=get_contact_trainer_keyboard(),
+        parse_mode="HTML",
     )
+
+
+async def show_about_menu_message(message: Message) -> None:
+    """Show full about profile from reply keyboard command."""
+    await _send_about_profile(message)
 
 
 @router.callback_query(F.data == "about:menu")
 async def show_about_menu(callback: CallbackQuery) -> None:
-    """Show about menu with profile/services/reviews/contacts sections."""
+    """Show full about profile for backward compatibility with old callbacks."""
     if not callback.message:
         await callback.answer()
         return
 
-    await callback.message.edit_text(
-        "Раздел «Обо мне». Выберите, что показать:",
-        reply_markup=_about_menu_keyboard(),
-    )
+    await _send_about_profile(callback.message)
     await callback.answer()
 
 
@@ -137,11 +141,7 @@ async def show_profile(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    await callback.message.edit_text(
-        _build_about_text(),
-        reply_markup=get_contact_trainer_keyboard(),
-        parse_mode="HTML",
-    )
+    await _send_about_profile(callback.message)
     await callback.answer()
 
 
