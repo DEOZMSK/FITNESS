@@ -5,8 +5,17 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+)
 
+from app.calculators.body_metrics import bmi, bmi_interpretation, ideal_weight, whr, whr_interpretation
+from app.calculators.calories import bju_distribution, bmr
 from app.bot.states import FullQuestionnaireStates, QuickDiagnosticsStates
 from app.bot.keyboards import (
     BUTTON_BACK,
@@ -30,6 +39,139 @@ def _diag_menu_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="start:menu")],
         ]
     )
+
+
+def _diagnostics_cta_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="💬 Написать тренеру"), KeyboardButton(text="📊 Мои результаты")],
+            [KeyboardButton(text="🏠 Главное меню")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def _build_quick_calculations(payload: dict[str, object]) -> dict[str, object]:
+    calculations: dict[str, object] = {}
+    try:
+        sex = str(payload.get("gender", ""))
+        height_cm = float(payload["height_cm"])
+        weight_kg = float(payload["weight_kg"])
+        age = int(payload["age"])
+        waist_cm = float(payload["waist_cm"])
+        hips_cm = float(payload["hips_cm"])
+
+        bmi_value = bmi(height_cm=height_cm, weight_kg=weight_kg)
+        whr_value = whr(waist_cm=waist_cm, hip_cm=hips_cm)
+        bmr_value = bmr(weight_kg=weight_kg, height_cm=height_cm, age=age, sex=sex)
+        macros = bju_distribution(weight_kg=weight_kg, calories_target=round(bmr_value), goal="maintain")
+
+        calculations = {
+            "bmi": bmi_value,
+            "bmi_status": bmi_interpretation(bmi_value),
+            "whr": whr_value,
+            "whr_status": whr_interpretation(whr_value, sex),
+            "ideal_weight_kg": ideal_weight(height_cm=height_cm, sex=sex),
+            "bmr": bmr_value,
+            "macros": macros,
+        }
+    except (ValueError, KeyError, TypeError):
+        calculations = {"status": "failed"}
+
+    return calculations
+
+
+def _build_quick_report_text(payload: dict[str, object], calculations: dict[str, object]) -> str:
+    user_data_block = (
+        "👤 <b>Данные пользователя</b>\n"
+        f"• Имя: {payload.get('name', '—')}\n"
+        f"• Возраст: {payload.get('age', '—')}\n"
+        f"• Пол: {payload.get('gender', '—')}\n"
+        f"• Рост/вес: {payload.get('height_cm', '—')} см / {payload.get('weight_kg', '—')} кг\n"
+        f"• Цель: {payload.get('goal', '—')}"
+    )
+
+    if calculations.get("status") == "failed":
+        calculations_block = "📈 <b>Расчёты</b>\n• Не удалось рассчитать автоматически. Тренер проверит вручную."
+    else:
+        macros = calculations.get("macros", {})
+        calculations_block = (
+            "📈 <b>Расчёты</b>\n"
+            f"• ИМТ: {calculations.get('bmi')} ({calculations.get('bmi_status')})\n"
+            f"• WHR: {calculations.get('whr')} ({calculations.get('whr_status')})\n"
+            f"• Идеальный вес (оценка): {calculations.get('ideal_weight_kg')} кг\n"
+            f"• BMR: {calculations.get('bmr')} ккал/сутки\n"
+            f"• БЖУ (поддержание): Б {macros.get('protein_g')} г / "
+            f"Ж {macros.get('fat_g')} г / У {macros.get('carbs_g')} г"
+        )
+
+    warning_block = (
+        "⚠️ <b>Важное предупреждение</b>\n"
+        "Эти расчёты носят ориентировочный характер и не заменяют консультацию врача."
+    )
+
+    discussion_block = (
+        "🤝 <b>Обсуждение с тренером</b>\n"
+        "На разборе уточним самочувствие, ограничения и безопасный стартовый план."
+    )
+
+    cta_block = (
+        "💬 <b>Готовы продолжить?</b>\n"
+        "Если хотите, мягко двигаемся дальше: тренер поможет разобрать результаты и выбрать комфортный следующий шаг."
+    )
+
+    return "\n\n".join([user_data_block, calculations_block, warning_block, discussion_block, cta_block])
+
+
+def _build_full_calculations(payload: dict[str, object]) -> dict[str, object]:
+    try:
+        sex = str(payload.get("gender", ""))
+        height_cm = float(payload["height_cm"])
+        weight_kg = float(payload["weight_kg"])
+        age = int(payload["age"])
+        bmi_value = bmi(height_cm=height_cm, weight_kg=weight_kg)
+        bmr_value = bmr(weight_kg=weight_kg, height_cm=height_cm, age=age, sex=sex)
+        return {
+            "bmi": bmi_value,
+            "bmi_status": bmi_interpretation(bmi_value),
+            "ideal_weight_kg": ideal_weight(height_cm=height_cm, sex=sex),
+            "bmr": bmr_value,
+        }
+    except (ValueError, KeyError, TypeError):
+        return {"status": "failed"}
+
+
+def _build_full_report_text(payload: dict[str, object], calculations: dict[str, object]) -> str:
+    user_data_block = (
+        "👤 <b>Данные пользователя</b>\n"
+        f"• Имя: {payload.get('name', '—')}\n"
+        f"• Возраст: {payload.get('age', '—')}\n"
+        f"• Пол: {payload.get('gender', '—')}\n"
+        f"• Рост/вес: {payload.get('height_cm', '—')} см / {payload.get('weight_kg', '—')} кг\n"
+        f"• Цель: {payload.get('goal', '—')}"
+    )
+    if calculations.get("status") == "failed":
+        calculations_block = "📈 <b>Расчёты</b>\n• Недостаточно данных для автоматических расчётов."
+    else:
+        calculations_block = (
+            "📈 <b>Расчёты</b>\n"
+            f"• ИМТ: {calculations.get('bmi')} ({calculations.get('bmi_status')})\n"
+            f"• Идеальный вес (оценка): {calculations.get('ideal_weight_kg')} кг\n"
+            f"• BMR: {calculations.get('bmr')} ккал/сутки"
+        )
+    warning_block = (
+        "⚠️ <b>Важное предупреждение</b>\n"
+        "Анкета и расчёты не заменяют медицинскую консультацию, особенно при болях и хронических состояниях."
+    )
+    discussion_block = (
+        "🤝 <b>Обсуждение с тренером</b>\n"
+        "На консультации определим приоритеты, ограничения и безопасную стратегию старта."
+    )
+    cta_block = (
+        "💬 <b>Готовы продолжить?</b>\n"
+        "Можно мягко перейти к следующему шагу: тренер поможет адаптировать план под ваш ритм жизни."
+    )
+    return "\n\n".join([user_data_block, calculations_block, warning_block, discussion_block, cta_block])
 
 
 def _to_number(raw_value: str) -> float | None:
@@ -260,11 +402,14 @@ async def quick_health(message: Message, state: FSMContext) -> None:
     found_factors = _find_stop_factors(health_text)
     payload["stop_factors"] = found_factors
 
+    calculations = _build_quick_calculations(payload)
+    calculation_payload = {"status": "stopped" if found_factors else "completed", **calculations}
+
     db = Database()
     diagnosis_session_id = db.save_diagnosis_session_and_calculation(
         user_id=user_id,
         session_payload=payload,
-        calculation_payload={"status": "stopped" if found_factors else "completed"},
+        calculation_payload=calculation_payload,
     )
 
     try:
@@ -279,15 +424,18 @@ async def quick_health(message: Message, state: FSMContext) -> None:
     except Exception:
         pass
 
-    await state.clear()
     if found_factors:
+        await state.clear()
         await message.answer(SAFE_STOP_MESSAGE, reply_markup=get_main_menu_keyboard())
         return
 
+    report_text = _build_quick_report_text(payload=payload, calculations=calculations)
+    await message.answer(report_text, reply_markup=_diagnostics_cta_keyboard())
     await message.answer(
-        "Спасибо! Быстрая диагностика сохранена.",
-        reply_markup=get_main_menu_keyboard(),
+        "Спасибо! Отчёт готов — можете обсудить его с тренером или вернуться в меню.",
+        reply_markup=_diagnostics_cta_keyboard(),
     )
+    await state.clear()
 
 
 @router.callback_query(F.data == "diag:full")
@@ -467,10 +615,14 @@ async def finish_full_questionnaire(message: Message, state: FSMContext) -> None
     )
     found_factors = _find_stop_factors(risk_source_text)
     payload["stop_factors"] = found_factors
+    calculations = _build_full_calculations(payload)
 
     user_id = await _get_or_create_user_id(message)
     db = Database()
-    questionnaire_id = db.save_full_questionnaire(user_id=user_id, answers_payload=payload)
+    questionnaire_id = db.save_full_questionnaire(
+        user_id=user_id,
+        answers_payload={**payload, "calculations": calculations},
+    )
 
     try:
         await send_diagnostics_summary(
@@ -484,12 +636,15 @@ async def finish_full_questionnaire(message: Message, state: FSMContext) -> None
     except Exception:
         pass
 
-    await state.clear()
     if found_factors:
+        await state.clear()
         await message.answer(SAFE_STOP_MESSAGE, reply_markup=get_main_menu_keyboard())
         return
 
+    report_text = _build_full_report_text(payload=payload, calculations=calculations)
+    await message.answer(report_text, reply_markup=_diagnostics_cta_keyboard())
     await message.answer(
-        "Спасибо! Полная анкета сохранена.",
-        reply_markup=get_main_menu_keyboard(),
+        "Спасибо! Полная анкета обработана, отчёт готов.",
+        reply_markup=_diagnostics_cta_keyboard(),
     )
+    await state.clear()

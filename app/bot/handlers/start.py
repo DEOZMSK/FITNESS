@@ -18,6 +18,7 @@ from app.bot.keyboards import (
 )
 
 router = Router(name=__name__)
+BUTTON_CONTACT_ALT = "💬 Написать тренеру"
 
 
 @router.message(CommandStart())
@@ -84,7 +85,7 @@ async def open_results_by_text(message: Message) -> None:
     )
 
 
-@router.message(F.text == BUTTON_CONTACT)
+@router.message(F.text.in_({BUTTON_CONTACT, BUTTON_CONTACT_ALT}))
 async def open_contact_by_text(message: Message) -> None:
     """Open trainer contact section from reply keyboard."""
     await message.answer(build_contacts_text())
