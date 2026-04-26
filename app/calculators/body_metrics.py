@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 GAP_STATUS = "Пограничное значение / нужна дополнительная оценка"
-WHR_NEUTRAL_STATUS = "Пограничное значение WHR: нужна дополнительная оценка"
+WHR_NEUTRAL_STATUS = "Пограничное значение WHR / нужна дополнительная оценка"
 
 SEX_ALIASES = {
     "male": {"male", "m", "man", "м", "муж"},
@@ -68,11 +68,22 @@ def bmi(height_cm: float, weight_kg: float) -> float:
     return round(weight_kg / ((height_cm / 100) ** 2), 2)
 
 
-def bmi_interpretation(bmi_value: float) -> str:
+def bmi_interpretation(bmi_value: float, age: int) -> str:
+    """Interpret BMI for age ranges 18–25 and 26–45 years."""
+
+    if 18 <= age <= 25:
+        normal_low = 18.5
+        normal_high = 24.9
+    elif 26 <= age <= 45:
+        normal_low = 19.0
+        normal_high = 25.9
+    else:
+        raise ValueError("age must be in [18, 45]")
+
     rules = (
-        RangeRule(None, 18.49, "Недостаточная масса тела"),
-        RangeRule(18.5, 24.99, "Нормальная масса тела"),
-        RangeRule(25.0, 29.99, "Избыточная масса тела"),
+        RangeRule(None, normal_low - 0.01, "Недостаточная масса тела"),
+        RangeRule(normal_low, normal_high, "Нормальная масса тела"),
+        RangeRule(normal_high + 0.01, 29.99, "Избыточная масса тела"),
         RangeRule(30.0, 34.99, "Ожирение I степени"),
         RangeRule(35.0, 39.99, "Ожирение II степени"),
         RangeRule(40.0, None, "Ожирение III степени"),
@@ -131,20 +142,25 @@ def ideal_weight(height_cm: float, sex: str) -> float:
     return result
 
 
-def somatotype(height_cm: float, weight_kg: float, wrist_cm: float) -> str:
-    """Simple rule-based somatotype classification."""
+def somatotype(sex: str, wrist_cm: float) -> str:
+    """Somatotype classification by wrist circumference and sex."""
 
     if wrist_cm <= 0:
         raise ValueError("wrist_cm must be > 0")
 
-    bmi_value = bmi(height_cm, weight_kg)
-    bone_index = height_cm / wrist_cm
+    normalized_sex = _normalize_sex(sex)
+    if normalized_sex == "male":
+        ecto_limit = 18.0
+        meso_limit = 20.0
+    else:
+        ecto_limit = 15.0
+        meso_limit = 17.0
 
-    if bmi_value < 18.5 and bone_index > 10.5:
+    if wrist_cm < ecto_limit:
         return "Эктоморф"
-    if 18.5 <= bmi_value <= 27 and 9.6 <= bone_index <= 10.5:
+    if ecto_limit < wrist_cm < meso_limit:
         return "Мезоморф"
-    if bmi_value > 27 and bone_index < 9.6:
+    if wrist_cm > meso_limit:
         return "Эндоморф"
 
     return GAP_STATUS
@@ -158,12 +174,35 @@ def chest_index(chest_circumference_cm: float, height_cm: float) -> float:
     return round((chest_circumference_cm / height_cm) * 100, 2)
 
 
-def limb_index(limb_circumference_cm: float, height_cm: float) -> float:
-    """Limb index in percent."""
+def chest_index_interpretation(chest_index_value: float, sex: str) -> str:
+    """Chest index interpretation by sex with boundary-gap handling."""
 
-    if height_cm <= 0:
-        raise ValueError("height_cm must be > 0")
-    return round((limb_circumference_cm / height_cm) * 100, 2)
+    normalized_sex = _normalize_sex(sex)
+    if normalized_sex == "male":
+        low_boundary = 50.0
+        high_boundary = 55.0
+    else:
+        low_boundary = 48.0
+        high_boundary = 53.0
+
+    rules = (
+        RangeRule(None, low_boundary - 0.01, "Узкая грудная клетка"),
+        RangeRule(low_boundary + 0.01, high_boundary - 0.01, "Нормальная грудная клетка"),
+        RangeRule(high_boundary + 0.01, None, "Широкая грудная клетка"),
+    )
+    return classify_with_gap_status(chest_index_value, rules)
+
+
+def limb_index(height_standing_cm: float, height_sitting_cm: float | None) -> float | None:
+    """Limb index in percent from standing and sitting heights."""
+
+    if height_sitting_cm is None:
+        return None
+    if height_standing_cm <= 0:
+        raise ValueError("height_standing_cm must be > 0")
+    if height_sitting_cm <= 0:
+        raise ValueError("height_sitting_cm must be > 0")
+    return round(((height_standing_cm - height_sitting_cm) / height_standing_cm) * 100, 2)
 
 
 def whr(waist_cm: float, hip_cm: float) -> float:
@@ -175,30 +214,20 @@ def whr(waist_cm: float, hip_cm: float) -> float:
 
 
 def whr_interpretation(whr_value: float, sex: str) -> str:
-    """WHR interpretation with neutral response for exact boundaries."""
+    """WHR interpretation with boundary-gap handling."""
 
     normalized_sex = _normalize_sex(sex)
     if normalized_sex == "male":
-        low_boundary = 0.9
-        high_boundary = 1.0
-        low_text = "Низкий риск"
-        normal_text = "Умеренный риск"
-        high_text = "Высокий риск"
-    elif normalized_sex == "female":
-        low_boundary = 0.8
-        high_boundary = 0.85
-        low_text = "Низкий риск"
-        normal_text = "Умеренный риск"
-        high_text = "Высокий риск"
+        low_boundary = 0.90
+        high_boundary = 1.00
     else:
-        raise ValueError("Unknown sex")
+        low_boundary = 0.80
+        high_boundary = 0.85
 
-    if whr_value in {low_boundary, high_boundary}:
-        return WHR_NEUTRAL_STATUS
-    if whr_value < low_boundary:
-        return low_text
-    if low_boundary < whr_value < high_boundary:
-        return normal_text
-    if whr_value > high_boundary:
-        return high_text
-    return GAP_STATUS
+    rules = (
+        RangeRule(None, low_boundary - 0.001, "Низкий риск"),
+        RangeRule(low_boundary + 0.001, high_boundary - 0.001, "Умеренный риск"),
+        RangeRule(high_boundary + 0.001, None, "Высокий риск"),
+    )
+    status = classify_with_gap_status(whr_value, rules, gap_status=WHR_NEUTRAL_STATUS)
+    return status
