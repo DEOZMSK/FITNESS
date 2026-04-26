@@ -17,6 +17,7 @@ class Settings(BaseModel):
     shop_id: str
     secret_key: str
     admin_id: int = 5948629306
+    database_path: str = "fitness.db"
 
     @field_validator("telegram_bot_token", "provider_token", "shop_id", "secret_key")
     @classmethod
@@ -35,6 +36,7 @@ def _read_env() -> dict[str, Any]:
         "shop_id": os.getenv("SHOP_ID", ""),
         "secret_key": os.getenv("SECRET_KEY", ""),
         "admin_id": os.getenv("ADMIN_ID", 5948629306),
+        "database_path": os.getenv("DATABASE_PATH", "fitness.db"),
     }
 
 
@@ -53,6 +55,7 @@ def load_settings() -> Settings:
             "shop_id": "SHOP_ID",
             "secret_key": "SECRET_KEY",
             "admin_id": "ADMIN_ID",
+            "database_path": "DATABASE_PATH",
         }
 
         for err in exc.errors():
