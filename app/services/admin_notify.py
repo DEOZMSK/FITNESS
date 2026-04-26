@@ -88,7 +88,14 @@ def _collect_diagnostics_sections(payload: dict[str, Any]) -> list[str]:
     if isinstance(stop_factors, list) and stop_factors:
         stop_text = "; ".join(str(item) for item in stop_factors)
 
-    source_items = [("Тип анкеты", "Быстрая" if payload.get("flow") == "quick" else "Полная")]
+    source_items = [
+        (
+            "Тип анкеты",
+            "Экспресс-расчёт метрик"
+            if payload.get("flow") == "quick"
+            else "Расширенная анкета здоровья",
+        )
+    ]
 
     lines: list[str] = []
     lines.extend(_format_section("Пользователь", profile_items))

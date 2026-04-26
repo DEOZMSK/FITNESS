@@ -33,6 +33,7 @@ from app.bot.keyboards import (
     BUTTON_BACK,
     BUTTON_SKIP,
     get_contact_trainer_keyboard,
+    get_diagnostics_menu_keyboard,
     get_main_menu_keyboard,
     get_scenario_nav_keyboard,
     get_scenario_skip_keyboard,
@@ -47,8 +48,8 @@ router = Router(name=__name__)
 def _diag_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⚡ Быстрая диагностика", callback_data="diag:quick")],
-            [InlineKeyboardButton(text="📋 Полная анкета", callback_data="diag:full")],
+            [InlineKeyboardButton(text="⚡ Экспресс-расчёт метрик", callback_data="diag:quick")],
+            [InlineKeyboardButton(text="📋 Расширенная анкета здоровья", callback_data="diag:full")],
             [InlineKeyboardButton(text="🧮 Калькуляторы тела", callback_data="diag:calculators")],
             [InlineKeyboardButton(text="📏 Калипер / % жира / LBM", callback_data="diag:caliper")],
             [InlineKeyboardButton(text="🔥 Калории и БЖУ", callback_data="diag:calories")],
@@ -169,7 +170,7 @@ def _build_quick_report_text(payload: dict[str, object], calculations: dict[str,
 
 def _build_quick_admin_report_text(payload: dict[str, object], calculations: dict[str, object]) -> str:
     lines = [
-        "🧪 Быстрая диагностика",
+        "⚡ Экспресс-расчёт метрик",
         f"• Имя: {payload.get('name', '—')}",
         f"• Возраст: {payload.get('age', '—')}",
         f"• Пол: {payload.get('gender', '—')}",
@@ -245,7 +246,7 @@ def _build_full_report_text(payload: dict[str, object], calculations: dict[str, 
 
 def _build_full_admin_report_text(payload: dict[str, object], calculations: dict[str, object]) -> str:
     lines = [
-        "📋 Полная анкета",
+        "📋 Расширенная анкета здоровья",
         f"• Имя: {payload.get('name', '—')}",
         f"• Возраст: {payload.get('age', '—')}",
         f"• Пол: {payload.get('gender', '—')}",
@@ -344,6 +345,10 @@ async def show_diagnostics_menu_message(message: Message) -> None:
     """Open diagnostics menu from reply keyboard command."""
     await message.answer(
         "🧪 Фитнес-диагностика\n\nВыберите формат прохождения:",
+        reply_markup=get_diagnostics_menu_keyboard(),
+    )
+    await message.answer(
+        "Выберите сценарий:",
         reply_markup=_diag_menu_keyboard(),
     )
 
@@ -356,7 +361,7 @@ async def show_diagnostics_menu(callback: CallbackQuery) -> None:
         return
 
     await callback.message.edit_text(
-        "🧪 Фитнес-диагностика\n\nВыберите формат прохождения:",
+        "Выберите сценарий:",
         reply_markup=_diag_menu_keyboard(),
     )
     await callback.answer()
@@ -389,7 +394,7 @@ async def start_quick_diagnostics(callback: CallbackQuery, state: FSMContext) ->
     await state.update_data(flow="quick")
     await state.set_state(QuickDiagnosticsStates.waiting_for_name)
     await callback.message.answer(
-        "Быстрая диагностика. Шаг 1/13: Как вас зовут?",
+        "Экспресс-расчёт метрик. Шаг 1/13: Как вас зовут?",
         reply_markup=get_scenario_nav_keyboard(),
     )
     await callback.answer()
@@ -402,7 +407,7 @@ async def quick_back_to_start(message: Message, state: FSMContext) -> None:
     await state.update_data(flow="quick")
     await state.set_state(QuickDiagnosticsStates.waiting_for_name)
     await message.answer(
-        "Возвращаю к началу быстрой диагностики. Шаг 1/13: Как вас зовут?",
+        "Возвращаю к началу экспресс-расчёта метрик. Шаг 1/13: Как вас зовут?",
         reply_markup=get_scenario_nav_keyboard(),
     )
 
@@ -667,7 +672,7 @@ async def quick_health(message: Message, state: FSMContext) -> None:
             user_id=user_id,
             lead_id=diagnosis_session_id,
             payload={**payload, "calculations": calculation_payload},
-            title="Новая быстрая диагностика",
+            title="Новый экспресс-расчёт метрик",
             lead_type="diagnosis",
             telegram_user_id=message.from_user.id if message.from_user else None,
             telegram_username=message.from_user.username if message.from_user else None,
@@ -698,7 +703,7 @@ async def start_full_questionnaire(callback: CallbackQuery, state: FSMContext) -
     await state.clear()
     await state.set_state(FullQuestionnaireStates.waiting_for_name)
     await callback.message.answer(
-        "Полная анкета. Шаг 1/18: Как вас зовут?",
+        "Расширенная анкета здоровья. Шаг 1/18: Как вас зовут?",
         reply_markup=get_scenario_nav_keyboard(),
     )
     await callback.answer()
@@ -710,7 +715,7 @@ async def full_back_to_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(FullQuestionnaireStates.waiting_for_name)
     await message.answer(
-        "Возвращаю к началу полной анкеты. Шаг 1/18: Как вас зовут?",
+        "Возвращаю к началу расширенной анкеты здоровья. Шаг 1/18: Как вас зовут?",
         reply_markup=get_scenario_nav_keyboard(),
     )
 
@@ -891,7 +896,7 @@ async def finish_full_questionnaire(message: Message, state: FSMContext) -> None
             user_id=user_id,
             lead_id=questionnaire_id,
             payload={**payload, "calculations": calculation_payload},
-            title="Новая полная анкета",
+            title="Новая расширенная анкета здоровья",
             lead_type="questionnaire",
             telegram_user_id=message.from_user.id if message.from_user else None,
             telegram_username=message.from_user.username if message.from_user else None,
@@ -906,7 +911,7 @@ async def finish_full_questionnaire(message: Message, state: FSMContext) -> None
 
     await message.answer(user_report_text, reply_markup=get_contact_trainer_keyboard())
     await message.answer(
-        "Спасибо! Полная анкета обработана, отчёт готов.",
+        "Спасибо! Расширенная анкета здоровья обработана, отчёт готов.",
         reply_markup=get_contact_trainer_keyboard(),
     )
     await state.clear()

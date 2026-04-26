@@ -6,6 +6,7 @@ from .main_menu import (
     BUTTON_CONTACT,
     BUTTON_DIAGNOSTICS,
     BUTTON_RESULTS,
+    get_diagnostics_menu_keyboard,
     get_main_menu_keyboard,
 )
 from .navigation import (
@@ -29,6 +30,7 @@ __all__ = (
     "BUTTON_HOME_MENU",
     "BUTTON_RESULTS",
     "BUTTON_SKIP",
+    "get_diagnostics_menu_keyboard",
     "get_main_menu_keyboard",
     "get_scenario_nav_keyboard",
     "get_scenario_skip_keyboard",

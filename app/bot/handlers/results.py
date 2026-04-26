@@ -38,14 +38,37 @@ def _format_created_at(raw_value: object) -> str:
 
 
 def _build_results_text(payload: dict[str, object], calculations: dict[str, object], created_at: object) -> str:
+    def _metric_value(key: str, status_key: str | None = None, suffix: str = "") -> str:
+        value = calculations.get(key)
+        if value is None:
+            return "не рассчитывался в этом сценарии"
+        if status_key:
+            status = calculations.get(status_key)
+            if status is None:
+                return f"{value}{suffix}"
+            return f"{value}{suffix} ({status})"
+        return f"{value}{suffix}"
+
+    macros = calculations.get("macros")
+    if isinstance(macros, dict):
+        bju_value = (
+            f"Б {macros.get('protein_g', '—')} г / "
+            f"Ж {macros.get('fat_g', '—')} г / "
+            f"У {macros.get('carbs_g', '—')} г"
+        )
+    else:
+        bju_value = "не рассчитывался в этом сценарии"
+
     lines = [
         "📊 <b>Ваши последние результаты</b>",
         f"📅 Дата: {_format_created_at(created_at)}",
         "",
         "📈 <b>Ключевые метрики</b>",
-        f"• ИМТ: {calculations.get('bmi', '—')} ({calculations.get('bmi_status', '—')})",
-        f"• WHR: {calculations.get('whr', '—')} ({calculations.get('whr_status', '—')})",
-        f"• BMR: {calculations.get('bmr', '—')} ккал/сутки",
+        f"• ИМТ (BMI): {_metric_value('bmi', 'bmi_status')}",
+        f"• WHR: {_metric_value('whr', 'whr_status')}",
+        f"• BMR: {_metric_value('bmr', suffix=' ккал/сутки')}",
+        f"• БЖУ: {bju_value}",
+        f"• Идеальный вес: {_metric_value('ideal_weight_kg', suffix=' кг')}",
         f"• Цель: {payload.get('goal', '—')}",
     ]
 
@@ -61,6 +84,17 @@ def _build_results_text(payload: dict[str, object], calculations: dict[str, obje
         restrictions_line += "не указаны"
 
     lines.extend(["", "⚠️ <b>Ограничения</b>", restrictions_line])
+    lines.extend(
+        [
+            "",
+            "ℹ️ <b>Что означают метрики</b>",
+            "• ИМТ (BMI): соотношение роста и веса, общий ориентир по массе тела.",
+            "• WHR: отношение талии к бёдрам, косвенный индикатор распределения жира.",
+            "• BMR: базовый обмен — энергия, которую организм тратит в покое.",
+            "• БЖУ: суточное распределение белков, жиров и углеводов.",
+            "• Идеальный вес: ориентировочный диапазон/оценка по формулам, не медицинский диагноз.",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -81,7 +115,7 @@ async def show_latest_results(message: Message) -> None:
 
     if latest_result is None:
         await message.answer(
-            "Пока нет сохранённых результатов. Пройдите диагностику — и я покажу отчёт здесь.",
+            "Результатов пока нет. Пройдите диагностику — и я покажу отчёт здесь.",
             reply_markup=_results_actions_keyboard(),
         )
         return

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -14,8 +15,8 @@ from app.db.configs import SEED_PRODUCTS, SEED_REVIEWS
 class Database:
     """Thin SQLite wrapper with app-specific CRUD operations."""
 
-    def __init__(self, db_path: str = "fitness.db") -> None:
-        self.db_path = db_path
+    def __init__(self, db_path: str | None = None) -> None:
+        self.db_path = db_path or os.getenv("DATABASE_PATH", "fitness.db")
         self._ensure_directory()
 
     def _ensure_directory(self) -> None:
