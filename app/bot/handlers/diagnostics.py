@@ -45,7 +45,11 @@ def _diag_menu_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="⚡ Быстрая диагностика", callback_data="diag:quick")],
             [InlineKeyboardButton(text="📋 Полная анкета", callback_data="diag:full")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="start:menu")],
+            [InlineKeyboardButton(text="🧮 Калькуляторы", callback_data="diag:calculators")],
+            [InlineKeyboardButton(text="🔥 Калории", callback_data="diag:calories")],
+            [InlineKeyboardButton(text="🤸 Гибкость", callback_data="diag:flexibility")],
+            [InlineKeyboardButton(text="🛡️ Противопоказания", callback_data="diag:contraindications")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="start:menu")],
         ]
     )
 
@@ -321,6 +325,22 @@ async def show_diagnostics_menu(callback: CallbackQuery) -> None:
         reply_markup=_diag_menu_keyboard(),
     )
     await callback.answer()
+
+
+async def _show_diagnostics_stub(callback: CallbackQuery) -> None:
+    if not callback.message:
+        await callback.answer()
+        return
+    await callback.message.answer(
+        "Раздел готовится. Сейчас доступны quick и full.",
+        reply_markup=_diag_menu_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.in_({"diag:calculators", "diag:calories", "diag:flexibility", "diag:contraindications"}))
+async def diagnostics_stub_sections(callback: CallbackQuery) -> None:
+    await _show_diagnostics_stub(callback)
 
 
 @router.callback_query(F.data == "diag:quick")
