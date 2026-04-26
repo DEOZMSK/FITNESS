@@ -106,9 +106,10 @@ async def show_services(callback: CallbackQuery) -> None:
         lines = ["🛍 <b>Услуги</b>"]
         for item in active_products:
             lines.append(
-                f"\n• <b>{item['title']}</b>\n"
+                f"\n• <b>{item['name']}</b>\n"
                 f"{item['description']}\n"
-                f"Стоимость: {item['price']} {item['currency']}"
+                f"Стоимость: {item['price']} {item['currency']}\n"
+                f"{item.get('cta', '')}"
             )
         text = "\n".join(lines)
 
@@ -127,13 +128,15 @@ async def show_reviews(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    if not reviews:
+    published_reviews = [item for item in reviews if item.get("is_published", True)]
+
+    if not published_reviews:
         text = "Пока нет отзывов."
     else:
         lines = ["💬 <b>Отзывы</b>"]
-        for item in reviews:
+        for item in published_reviews:
             stars = "⭐" * int(item.get("rating", 0))
-            lines.append(f"\n• <b>{item['author']}</b> {stars}\n{item['text']}")
+            lines.append(f"\n• <b>{item['author_name']}</b> {stars}\n{item['text']}")
         text = "\n".join(lines)
 
     await callback.message.edit_text(
