@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 from aiogram import F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.bot.states import FullQuestionnaireStates, QuickDiagnosticsStates
+from app.bot.keyboards import (
+    BUTTON_BACK,
+    BUTTON_SKIP,
+    get_main_menu_keyboard,
+    get_scenario_nav_keyboard,
+    get_scenario_skip_keyboard,
+)
 from app.data.contraindications import SAFE_STOP_MESSAGE, STOP_FACTORS
 from app.db import Database
 from app.services import send_diagnostics_summary
@@ -20,14 +28,6 @@ def _diag_menu_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="⚡ Быстрая диагностика", callback_data="diag:quick")],
             [InlineKeyboardButton(text="📋 Полная анкета", callback_data="diag:full")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="start:menu")],
-        ]
-    )
-
-
-def _skip_sitting_height_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Пропустить", callback_data="diag:skip_sitting_height")]
         ]
     )
 
@@ -92,8 +92,23 @@ async def start_quick_diagnostics(callback: CallbackQuery, state: FSMContext) ->
     await state.clear()
     await state.update_data(flow="quick")
     await state.set_state(QuickDiagnosticsStates.waiting_for_name)
-    await callback.message.answer("Быстрая диагностика. Шаг 1/12: Как вас зовут?")
+    await callback.message.answer(
+        "Быстрая диагностика. Шаг 1/12: Как вас зовут?",
+        reply_markup=get_scenario_nav_keyboard(),
+    )
     await callback.answer()
+
+
+@router.message(StateFilter(QuickDiagnosticsStates), F.text == BUTTON_BACK)
+async def quick_back_to_start(message: Message, state: FSMContext) -> None:
+    """Safe back action for quick flow (fallback to first step)."""
+    await state.clear()
+    await state.update_data(flow="quick")
+    await state.set_state(QuickDiagnosticsStates.waiting_for_name)
+    await message.answer(
+        "Возвращаю к началу быстрой диагностики. Шаг 1/12: Как вас зовут?",
+        reply_markup=get_scenario_nav_keyboard(),
+    )
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_name)
@@ -186,20 +201,18 @@ async def quick_wrist(message: Message, state: FSMContext) -> None:
     await state.set_state(QuickDiagnosticsStates.waiting_for_sitting_height)
     await message.answer(
         "Шаг 10/12: Рост сидя (см, опционально).",
-        reply_markup=_skip_sitting_height_keyboard(),
+        reply_markup=get_scenario_skip_keyboard(),
     )
 
 
-@router.callback_query(F.data == "diag:skip_sitting_height")
-async def quick_skip_sitting_height(callback: CallbackQuery, state: FSMContext) -> None:
-    if not callback.message:
-        await callback.answer()
-        return
-
+@router.message(QuickDiagnosticsStates.waiting_for_sitting_height, F.text == BUTTON_SKIP)
+async def quick_skip_sitting_height(message: Message, state: FSMContext) -> None:
     await state.update_data(sitting_height_cm=None)
     await state.set_state(QuickDiagnosticsStates.waiting_for_goal)
-    await callback.message.answer("Шаг 11/12: Какая у вас цель?")
-    await callback.answer("Пропущено")
+    await message.answer(
+        "Шаг 11/12: Какая у вас цель?",
+        reply_markup=get_scenario_nav_keyboard(),
+    )
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_sitting_height)
@@ -210,7 +223,10 @@ async def quick_sitting_height(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(sitting_height_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_goal)
-    await message.answer("Шаг 11/12: Какая у вас цель?")
+    await message.answer(
+        "Шаг 11/12: Какая у вас цель?",
+        reply_markup=get_scenario_nav_keyboard(),
+    )
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_goal)
@@ -265,10 +281,13 @@ async def quick_health(message: Message, state: FSMContext) -> None:
 
     await state.clear()
     if found_factors:
-        await message.answer(SAFE_STOP_MESSAGE)
+        await message.answer(SAFE_STOP_MESSAGE, reply_markup=get_main_menu_keyboard())
         return
 
-    await message.answer("Спасибо! Быстрая диагностика сохранена.")
+    await message.answer(
+        "Спасибо! Быстрая диагностика сохранена.",
+        reply_markup=get_main_menu_keyboard(),
+    )
 
 
 @router.callback_query(F.data == "diag:full")
@@ -280,8 +299,22 @@ async def start_full_questionnaire(callback: CallbackQuery, state: FSMContext) -
 
     await state.clear()
     await state.set_state(FullQuestionnaireStates.waiting_for_name)
-    await callback.message.answer("Полная анкета. Шаг 1/18: Как вас зовут?")
+    await callback.message.answer(
+        "Полная анкета. Шаг 1/18: Как вас зовут?",
+        reply_markup=get_scenario_nav_keyboard(),
+    )
     await callback.answer()
+
+
+@router.message(StateFilter(FullQuestionnaireStates), F.text == BUTTON_BACK)
+async def full_back_to_start(message: Message, state: FSMContext) -> None:
+    """Safe back action for full flow (fallback to first step)."""
+    await state.clear()
+    await state.set_state(FullQuestionnaireStates.waiting_for_name)
+    await message.answer(
+        "Возвращаю к началу полной анкеты. Шаг 1/18: Как вас зовут?",
+        reply_markup=get_scenario_nav_keyboard(),
+    )
 
 
 @router.message(FullQuestionnaireStates.waiting_for_name)
@@ -453,7 +486,10 @@ async def finish_full_questionnaire(message: Message, state: FSMContext) -> None
 
     await state.clear()
     if found_factors:
-        await message.answer(SAFE_STOP_MESSAGE)
+        await message.answer(SAFE_STOP_MESSAGE, reply_markup=get_main_menu_keyboard())
         return
 
-    await message.answer("Спасибо! Полная анкета сохранена.")
+    await message.answer(
+        "Спасибо! Полная анкета сохранена.",
+        reply_markup=get_main_menu_keyboard(),
+    )
