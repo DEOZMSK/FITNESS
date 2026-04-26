@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from html import escape
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -35,6 +36,14 @@ from app.bot.keyboards import (
     get_post_diagnostics_keyboard,
 )
 from app.bot.states import QuickDiagnosticsStates
+from app.bot.texts import (
+    get_final_report_text,
+    get_goal_explanation,
+    get_input_error_text,
+    get_intermediate_processing_text,
+    get_metric_explanation,
+    get_question_text,
+)
 from app.calculators.body_metrics import (
     bmi,
     bmi_interpretation,
@@ -303,7 +312,7 @@ def _goal_macros(weight_kg: float, target_calories: int, goal_type: str) -> dict
 def _client_data_block(profile: dict, goal_text: str) -> list[str]:
     return [
         "👤 <b>Данные клиента</b>",
-        f"{profile.get('full_name') or 'Клиент'}, {profile.get('age') or '—'} лет",
+        f"{escape(str(profile.get('full_name') or 'Клиент'))}, {profile.get('age') or '—'} лет",
         f"Пол: {_sex_label(profile.get('sex')) if profile.get('sex') else '—'}",
         f"Рост: {_safe_number(profile.get('height_cm'))} см",
         f"Вес: {_safe_number(profile.get('weight_kg'))} кг",
@@ -312,13 +321,7 @@ def _client_data_block(profile: dict, goal_text: str) -> list[str]:
 
 
 def _goal_explanation_block(goal_type: str) -> list[str]:
-    goal_data = GOAL_TYPE_TEXTS[goal_type]
-    return [
-        f"🎯 <b>Цель: {goal_data['title']}</b>",
-        "",
-        "<b>Простыми словами:</b>",
-        goal_data["plain"],
-    ]
+    return get_goal_explanation(goal_type).split("\n")
 
 
 def _metrics_interpretation_block(payload: dict) -> list[str]:
@@ -349,7 +352,7 @@ def _calories_block(payload: dict, goal_type: str, target_calories: int) -> list
     goal_data = GOAL_TYPE_TEXTS[goal_type]
     lines = [
         "🔥 <b>Энергия на день</b>",
-        f"Ваш ориентир: {_round_calories(payload['tdc'])} ккал/сутки.",
+        get_metric_explanation("calories", str(target_calories)).replace("🔥 ", ""),
         "",
         "<b>Объяснение:</b>",
         "Это примерная точка отсчёта. От неё зависит, будет ли вес расти, снижаться или стоять на месте.",
@@ -458,17 +461,7 @@ async def _user_context(message: Message) -> tuple[Database, int]:
 
 
 def _ask_number(field: str) -> str:
-    prompts = {
-        "age": "Введите возраст. Например: 34",
-        "height": "Введите рост в сантиметрах. Например: 168",
-        "weight": "Введите вес в килограммах. Например: 64",
-        "waist": "Введите обхват талии в сантиметрах. Например: 72",
-        "hips": "Введите обхват бёдер в сантиметрах. Например: 98",
-        "chest": "Введите обхват грудной клетки в сантиметрах. Например: 92",
-        "wrist": "Введите обхват запястья в сантиметрах. Например: 16",
-        "sitting": "Введите рост сидя в сантиметрах. Например: 90",
-    }
-    return prompts[field]
+    return get_question_text(field)
 
 
 async def _start_questionnaire(message: Message, state: FSMContext) -> None:
@@ -478,7 +471,7 @@ async def _start_questionnaire(message: Message, state: FSMContext) -> None:
         "Сейчас я задам несколько вопросов, чтобы собрать первичные данные и подготовить фитнес-отчёт. "
         "Это не медицинский диагноз, а предварительная оценка для дальнейшей работы с тренером."
     )
-    await message.answer("Как вас зовут?")
+    await message.answer(get_question_text("name"))
 
 
 @router.message(F.text == BUTTON_DIAGNOSTICS)
@@ -528,18 +521,18 @@ async def update_confirmation(message: Message, state: FSMContext) -> None:
 async def q_name(message: Message, state: FSMContext) -> None:
     full_name = (message.text or "").strip()
     if len(full_name) < 2:
-        await message.answer("Введите имя текстом. Например: Анна")
+        await message.answer(get_input_error_text("text_required"))
         return
     await state.update_data(full_name=full_name)
     await state.set_state(QuickDiagnosticsStates.waiting_for_sex)
-    await message.answer("Выберите пол:", reply_markup=_two_col_keyboard([BUTTON_SEX_WOMAN, BUTTON_SEX_MAN]))
+    await message.answer(get_question_text("sex"), reply_markup=_two_col_keyboard([BUTTON_SEX_WOMAN, BUTTON_SEX_MAN]))
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_sex)
 async def q_sex(message: Message, state: FSMContext) -> None:
     txt = (message.text or "").strip()
     if txt not in {BUTTON_SEX_WOMAN, BUTTON_SEX_MAN, "♀️ Женщина", "👨 Мужчина"}:
-        await message.answer("Пожалуйста, выберите вариант кнопкой.")
+        await message.answer(get_input_error_text("choice_button"))
         return
     await state.update_data(sex=_normalize_sex(txt))
     await state.set_state(QuickDiagnosticsStates.waiting_for_age)
@@ -559,10 +552,10 @@ def _validate_number(message_text: str | None, lo: float, hi: float) -> float | 
 async def q_age(message: Message, state: FSMContext) -> None:
     value = _validate_number(message.text, 12, 90)
     if value is None:
-        await message.answer("Не получилось распознать значение. Введите только число, например: 34")
+        await message.answer(get_input_error_text("number"))
         return
     if value == -1:
-        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        await message.answer(get_input_error_text("age_format"))
         return
     await state.update_data(age=int(value))
     await state.set_state(QuickDiagnosticsStates.waiting_for_height)
@@ -573,10 +566,10 @@ async def q_age(message: Message, state: FSMContext) -> None:
 async def q_height(message: Message, state: FSMContext) -> None:
     value = _validate_number(message.text, 120, 230)
     if value is None:
-        await message.answer("Не получилось распознать значение. Введите только число, например: 168")
+        await message.answer(get_input_error_text("number"))
         return
     if value == -1:
-        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        await message.answer(get_input_error_text("height_format"))
         return
     if value < 135 or value > 215:
         await message.answer("Проверьте, пожалуйста, рост — значение выглядит необычно.")
@@ -589,10 +582,10 @@ async def q_height(message: Message, state: FSMContext) -> None:
 async def q_weight(message: Message, state: FSMContext) -> None:
     value = _validate_number(message.text, 30, 250)
     if value is None:
-        await message.answer("Не получилось распознать значение. Введите только число, например: 64")
+        await message.answer(get_input_error_text("number"))
         return
     if value == -1:
-        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        await message.answer(get_input_error_text("weight_format"))
         return
     if value < 40 or value > 180:
         await message.answer("Проверьте, пожалуйста, вес — значение выглядит необычно.")
@@ -605,10 +598,10 @@ async def q_weight(message: Message, state: FSMContext) -> None:
 async def q_waist(message: Message, state: FSMContext) -> None:
     value = _validate_number(message.text, 40, 200)
     if value is None:
-        await message.answer("Не получилось распознать значение. Введите только число, например: 72")
+        await message.answer(get_input_error_text("number"))
         return
     if value == -1:
-        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        await message.answer(get_input_error_text("waist_format"))
         return
     await state.update_data(waist_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_hips)
@@ -619,10 +612,10 @@ async def q_waist(message: Message, state: FSMContext) -> None:
 async def q_hips(message: Message, state: FSMContext) -> None:
     value = _validate_number(message.text, 40, 220)
     if value is None:
-        await message.answer("Не получилось распознать значение. Введите только число, например: 98")
+        await message.answer(get_input_error_text("number"))
         return
     if value == -1:
-        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        await message.answer(get_input_error_text("hips_format"))
         return
     data = await state.get_data()
     if value < float(data["waist_cm"]):
@@ -655,10 +648,10 @@ async def q_hips_confirm(message: Message, state: FSMContext) -> None:
 async def q_chest(message: Message, state: FSMContext) -> None:
     value = _validate_number(message.text, 40, 200)
     if value is None:
-        await message.answer("Не получилось распознать значение. Введите только число, например: 92")
+        await message.answer(get_input_error_text("number"))
         return
     if value == -1:
-        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        await message.answer(get_input_error_text("number"))
         return
     await state.update_data(chest_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_wrist)
@@ -669,10 +662,10 @@ async def q_chest(message: Message, state: FSMContext) -> None:
 async def q_wrist(message: Message, state: FSMContext) -> None:
     value = _validate_number(message.text, 10, 30)
     if value is None:
-        await message.answer("Не получилось распознать значение. Введите только число, например: 16")
+        await message.answer(get_input_error_text("number"))
         return
     if value == -1:
-        await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+        await message.answer(get_input_error_text("number"))
         return
     await state.update_data(wrist_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_sitting_height)
@@ -690,64 +683,64 @@ async def q_sitting(message: Message, state: FSMContext) -> None:
     else:
         value = _validate_number(txt, 50, 150)
         if value is None:
-            await message.answer("Не получилось распознать значение. Введите только число, например: 90")
+            await message.answer(get_input_error_text("number"))
             return
         if value == -1:
-            await message.answer("Похоже, значение введено с ошибкой. Проверьте и введите ещё раз.")
+            await message.answer(get_input_error_text("number"))
             return
         await state.update_data(sitting_height_cm=value)
     await state.set_state(QuickDiagnosticsStates.waiting_for_goal)
-    await message.answer("Выберите цель:", reply_markup=_single_col_keyboard(GOALS + [BUTTON_HOME_MENU]))
+    await message.answer(get_question_text("goal"), reply_markup=_single_col_keyboard(GOALS + [BUTTON_HOME_MENU]))
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_goal)
 async def q_goal(message: Message, state: FSMContext) -> None:
     txt = (message.text or "").strip()
     if txt not in GOALS:
-        await message.answer("Пожалуйста, выберите цель кнопкой.")
+        await message.answer(get_input_error_text("choice_button"))
         return
     await state.update_data(goal=txt)
     await state.set_state(QuickDiagnosticsStates.waiting_for_activity)
-    await message.answer("Выберите уровень активности:", reply_markup=_single_col_keyboard(ACTIVITY_OPTIONS + [BUTTON_HOME_MENU]))
+    await message.answer(get_question_text("activity"), reply_markup=_single_col_keyboard(ACTIVITY_OPTIONS + [BUTTON_HOME_MENU]))
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_activity)
 async def q_activity(message: Message, state: FSMContext) -> None:
     txt = (message.text or "").strip()
     if txt not in ACTIVITY_OPTIONS:
-        await message.answer("Пожалуйста, выберите вариант кнопкой.")
+        await message.answer(get_input_error_text("choice_button"))
         return
     await state.update_data(activity_level=txt)
     await state.set_state(QuickDiagnosticsStates.waiting_for_workouts)
-    await message.answer("Сколько тренировок в неделю?", reply_markup=_two_col_keyboard(WORKOUT_OPTIONS + [BUTTON_HOME_MENU]))
+    await message.answer(get_question_text("workouts"), reply_markup=_two_col_keyboard(WORKOUT_OPTIONS + [BUTTON_HOME_MENU]))
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_workouts)
 async def q_workouts(message: Message, state: FSMContext) -> None:
     txt = (message.text or "").strip()
     if txt not in WORKOUT_OPTIONS:
-        await message.answer("Пожалуйста, выберите вариант кнопкой.")
+        await message.answer(get_input_error_text("choice_button"))
         return
     await state.update_data(workouts_per_week=txt)
     await state.set_state(QuickDiagnosticsStates.waiting_for_health_limits)
-    await message.answer("Есть ли ограничения по здоровью?", reply_markup=_two_col_keyboard(HEALTH_LIMIT_OPTIONS + [BUTTON_HOME_MENU]))
+    await message.answer(get_question_text("health_limits"), reply_markup=_two_col_keyboard(HEALTH_LIMIT_OPTIONS + [BUTTON_HOME_MENU]))
 
 
 @router.message(QuickDiagnosticsStates.waiting_for_health_limits)
 async def q_limits(message: Message, state: FSMContext) -> None:
     txt = (message.text or "").strip()
     if txt not in HEALTH_LIMIT_OPTIONS:
-        await message.answer("Пожалуйста, выберите вариант кнопкой.")
+        await message.answer(get_input_error_text("choice_button"))
         return
     await state.update_data(health_limit_flag=txt)
     if txt == "Да":
         await state.set_state(QuickDiagnosticsStates.waiting_for_health_details)
-        await message.answer("Коротко опишите ограничения по здоровью текстом.")
+        await message.answer(get_question_text("health_details"))
         return
     await state.update_data(health_notes="—")
     await state.set_state(QuickDiagnosticsStates.waiting_for_pressure)
     await message.answer(
-        "Если знаете, введите давление в формате 120/80",
+        get_question_text("pressure"),
         reply_markup=_two_col_keyboard([BUTTON_SKIP_PRESSURE, BUTTON_HOME_MENU]),
     )
 
@@ -756,12 +749,12 @@ async def q_limits(message: Message, state: FSMContext) -> None:
 async def q_limits_details(message: Message, state: FSMContext) -> None:
     txt = (message.text or "").strip()
     if len(txt) < 2:
-        await message.answer("Введите короткое описание ограничений текстом.")
+        await message.answer(get_input_error_text("text_required"))
         return
     await state.update_data(health_notes=txt)
     await state.set_state(QuickDiagnosticsStates.waiting_for_pressure)
     await message.answer(
-        "Если знаете, введите давление в формате 120/80",
+        get_question_text("pressure"),
         reply_markup=_two_col_keyboard([BUTTON_SKIP_PRESSURE, BUTTON_HOME_MENU]),
     )
 
@@ -774,19 +767,19 @@ async def q_pressure(message: Message, state: FSMContext) -> None:
     else:
         pressure = _parse_pressure(txt)
         if pressure is None:
-            await message.answer("Не получилось распознать значение. Пример: 120/80")
+            await message.answer(get_input_error_text("pressure_format"))
             return
         await state.update_data(pressure_text=f"{pressure[0]}/{pressure[1]}")
 
     data = await state.get_data()
-    if data.get("sex") == "женщина":
+    if data.get("sex") == "female":
         await state.set_state(QuickDiagnosticsStates.waiting_for_pregnancy)
-        await message.answer("Беременность?", reply_markup=_two_col_keyboard(PREGNANCY_OPTIONS + [BUTTON_HOME_MENU]))
+        await message.answer(get_question_text("pregnancy"), reply_markup=_two_col_keyboard(PREGNANCY_OPTIONS + [BUTTON_HOME_MENU]))
         return
     await state.update_data(pregnancy_status="Не применимо")
     await state.set_state(QuickDiagnosticsStates.waiting_for_consultation)
     await message.answer(
-        "Хотите бесплатную консультацию / задать вопрос тренеру?",
+        get_question_text("consultation"),
         reply_markup=_two_col_keyboard([BUTTON_CONSULT_YES, BUTTON_CONSULT_NO]),
     )
 
@@ -795,12 +788,12 @@ async def q_pressure(message: Message, state: FSMContext) -> None:
 async def q_pregnancy(message: Message, state: FSMContext) -> None:
     txt = (message.text or "").strip()
     if txt not in PREGNANCY_OPTIONS:
-        await message.answer("Пожалуйста, выберите вариант кнопкой.")
+        await message.answer(get_input_error_text("choice_button"))
         return
     await state.update_data(pregnancy_status=txt)
     await state.set_state(QuickDiagnosticsStates.waiting_for_consultation)
     await message.answer(
-        "Хотите бесплатную консультацию / задать вопрос тренеру?",
+        get_question_text("consultation"),
         reply_markup=_two_col_keyboard([BUTTON_CONSULT_YES, BUTTON_CONSULT_NO]),
     )
 
@@ -809,7 +802,7 @@ async def q_pregnancy(message: Message, state: FSMContext) -> None:
 async def q_consult(message: Message, state: FSMContext) -> None:
     txt = (message.text or "").strip()
     if txt not in {BUTTON_CONSULT_YES, BUTTON_CONSULT_NO}:
-        await message.answer("Пожалуйста, выберите вариант кнопкой.")
+        await message.answer(get_input_error_text("choice_button"))
         return
 
     wants_consultation = txt == BUTTON_CONSULT_YES
@@ -866,7 +859,6 @@ def _build_report_text(profile: dict, payload: dict) -> str:
     target_calories = _calculate_goal_calories(payload["tdc"], goal_type)
     macros = _goal_macros(profile["weight_kg"], target_calories, goal_type)
 
-    lines = ["📊 <b>Ваш фитнес-профиль</b>", ""]
     blocks = [
         _client_data_block(profile, goal_text),
         _goal_explanation_block(goal_type),
@@ -879,11 +871,17 @@ def _build_report_text(profile: dict, payload: dict) -> str:
         _cta_block(),
         _disclaimer_block(profile),
     ]
-    for idx, block in enumerate(blocks):
-        lines.extend(block)
-        if idx != len(blocks) - 1:
-            lines.append("")
-    return "\n".join(lines)
+    parts = []
+    for block in blocks:
+        parts.append("\n".join(block))
+    return get_final_report_text(profile, {
+        "goal_block": parts[1],
+        "metrics_block": parts[2],
+        "calories_block": parts[3],
+        "macros_block": parts[4],
+        "attention_block": parts[5] + "\n\n" + parts[6],
+        "pain_point_block": parts[7],
+    })
 
 
 def _build_admin_report(message: Message, profile: dict, payload: dict) -> str:
@@ -950,6 +948,7 @@ async def _finish_diagnostics(message: Message, state: FSMContext) -> None:
             )
             return
         raise
+    await message.answer(get_intermediate_processing_text())
     report_text = _build_report_text(profile, payload)
 
     db, user_id = await _user_context(message)

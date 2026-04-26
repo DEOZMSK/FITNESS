@@ -14,6 +14,7 @@ from app.bot.keyboards import (
     get_contact_trainer_keyboard,
     get_main_menu_keyboard,
 )
+from app.bot.texts import get_welcome_text
 
 router = Router(name=__name__)
 
@@ -21,7 +22,7 @@ router = Router(name=__name__)
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await message.answer("Добро пожаловать! Выберите нужный раздел:", reply_markup=get_main_menu_keyboard())
+    await message.answer(get_welcome_text(), reply_markup=get_main_menu_keyboard())
 
 
 @router.message(F.text == BUTTON_HOME_MENU)
