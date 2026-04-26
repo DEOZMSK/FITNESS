@@ -349,6 +349,18 @@ class Database:
                 (diagnosis_session_id,),
             )
 
+    def mark_diagnosis_lead_sent(self, diagnosis_session_id: int) -> None:
+        """Mark diagnosis lead as successfully sent."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                UPDATE diagnosis_sessions
+                SET lead_sent = 1
+                WHERE id = ?
+                """,
+                (diagnosis_session_id,),
+            )
+
     def mark_payment_lead_unsent(self, payment_id: int) -> None:
         """Mark payment lead as not sent for retries."""
         with self.connection() as conn:
@@ -356,6 +368,18 @@ class Database:
                 """
                 UPDATE payments
                 SET lead_sent = 0
+                WHERE id = ?
+                """,
+                (payment_id,),
+            )
+
+    def mark_payment_lead_sent(self, payment_id: int) -> None:
+        """Mark payment lead as successfully sent."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                UPDATE payments
+                SET lead_sent = 1
                 WHERE id = ?
                 """,
                 (payment_id,),
@@ -372,6 +396,114 @@ class Database:
                 """,
                 (questionnaire_id,),
             )
+
+    def mark_questionnaire_lead_sent(self, questionnaire_id: int) -> None:
+        """Mark full questionnaire lead as successfully sent."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                UPDATE questionnaire_answers
+                SET lead_sent = 1
+                WHERE id = ?
+                """,
+                (questionnaire_id,),
+            )
+
+    def get_unsent_diagnosis_leads(self) -> list[dict[str, Any]]:
+        """Return diagnosis leads that were not delivered to admin."""
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    ds.id AS lead_id,
+                    ds.user_id AS user_id,
+                    ds.session_payload AS payload,
+                    u.telegram_id AS telegram_user_id,
+                    u.username AS telegram_username
+                FROM diagnosis_sessions ds
+                JOIN users u ON u.id = ds.user_id
+                WHERE ds.lead_sent = 0
+                ORDER BY ds.created_at ASC, ds.id ASC
+                """
+            ).fetchall()
+
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            payload_raw = row["payload"]
+            payload = json.loads(payload_raw) if isinstance(payload_raw, str) else {}
+            result.append(
+                {
+                    "lead_id": int(row["lead_id"]),
+                    "user_id": int(row["user_id"]),
+                    "payload": payload,
+                    "telegram_user_id": row["telegram_user_id"],
+                    "telegram_username": row["telegram_username"],
+                }
+            )
+        return result
+
+    def get_unsent_questionnaire_leads(self) -> list[dict[str, Any]]:
+        """Return questionnaire leads that were not delivered to admin."""
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    qa.id AS lead_id,
+                    qa.user_id AS user_id,
+                    qa.answers_payload AS payload,
+                    u.telegram_id AS telegram_user_id,
+                    u.username AS telegram_username
+                FROM questionnaire_answers qa
+                JOIN users u ON u.id = qa.user_id
+                WHERE qa.lead_sent = 0
+                ORDER BY qa.created_at ASC, qa.id ASC
+                """
+            ).fetchall()
+
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            payload_raw = row["payload"]
+            payload = json.loads(payload_raw) if isinstance(payload_raw, str) else {}
+            result.append(
+                {
+                    "lead_id": int(row["lead_id"]),
+                    "user_id": int(row["user_id"]),
+                    "payload": payload,
+                    "telegram_user_id": row["telegram_user_id"],
+                    "telegram_username": row["telegram_username"],
+                }
+            )
+        return result
+
+    def get_unsent_payment_leads(self) -> list[dict[str, Any]]:
+        """Return payment leads that were not delivered to admin."""
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    p.id AS payment_id,
+                    p.user_id AS user_id,
+                    p.amount AS amount,
+                    p.payload AS payload
+                FROM payments p
+                WHERE p.lead_sent = 0
+                ORDER BY p.created_at ASC, p.id ASC
+                """
+            ).fetchall()
+
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            payload_raw = row["payload"]
+            payload = json.loads(payload_raw) if isinstance(payload_raw, str) else {}
+            result.append(
+                {
+                    "payment_id": int(row["payment_id"]),
+                    "user_id": int(row["user_id"]),
+                    "amount": int(row["amount"]),
+                    "payload": payload,
+                }
+            )
+        return result
 
     def _seed_products(self, conn: sqlite3.Connection) -> None:
         conn.executemany(

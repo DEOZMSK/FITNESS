@@ -11,6 +11,7 @@ from aiogram.client.default import DefaultBotProperties
 from app.bot.handlers import router as main_router
 from app.config import load_settings
 from app.db import Database
+from app.services import retry_unsent_leads
 
 
 async def main() -> None:
@@ -30,6 +31,8 @@ async def main() -> None:
         token=settings.telegram_bot_token,
         default=DefaultBotProperties(parse_mode="HTML"),
     )
+    await retry_unsent_leads(bot)
+
     dp = Dispatcher()
 
     dp.include_router(main_router)
