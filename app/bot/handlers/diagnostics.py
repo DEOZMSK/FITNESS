@@ -63,6 +63,115 @@ GOALS = [
     "Улучшить выносливость",
     "Другое",
 ]
+GOAL_TYPE_TEXTS = {
+    "muscle_gain": {
+        "title": "набрать мышечную массу",
+        "plain": (
+            "Вам нужно есть немного больше, чем организм тратит, и давать мышцам регулярную "
+            "силовую нагрузку. Без профицита калорий масса обычно не растёт, даже если тренировки хорошие."
+        ),
+        "calories_details": (
+            "Для набора массы обычно нужен небольшой профицит: примерно +10–15% к текущей норме."
+        ),
+        "calories_hint": "Если вес не растёт 10–14 дней, калории можно аккуратно повысить ещё на 100–150 ккал.",
+        "macros_hint": (
+            "При наборе массы особенно важно добирать белок и углеводы. Белок помогает "
+            "восстанавливаться, а углеводы дают энергию для силовых тренировок. Если еды мало — мышцам просто не из чего расти."
+        ),
+        "attention_items": [
+            "Если вес не растёт — скорее всего, не хватает калорий.",
+            "Если растёт только живот — профицит может быть слишком большим.",
+            "Если силовые не растут — возможно, не хватает восстановления, сна или структуры тренировок.",
+            "Для набора важно не просто «много есть», а регулярно тренироваться и отслеживать прогресс.",
+        ],
+        "pain_point": (
+            "Многие тренируются, но не растут, потому что едят «на глаз» и недобирают калории. "
+            "Кажется, что еды много, но по факту организм остаётся около поддержания."
+        ),
+        "trainer_extra": [
+            "какой набор выбрать: более «чистый» или более быстрый;",
+            "как понять, что растут мышцы, а не только вес;",
+        ],
+    },
+    "fat_loss": {
+        "title": "снизить вес",
+        "plain": (
+            "Вам нужно создать умеренный дефицит калорий: тратить чуть больше, чем получаете с едой. "
+            "При этом важно сохранить белок и силовые нагрузки, чтобы уходил в основном жир, а не мышцы."
+        ),
+        "calories_details": "Для снижения веса обычно нужен умеренный дефицит: примерно –10–20% от текущей нормы.",
+        "calories_hint": "Если вес уходит слишком быстро, повышается усталость или падает сила — дефицит может быть слишком жёстким.",
+        "macros_hint": (
+            "При снижении веса белок особенно важен: он помогает сохранять мышцы и лучше держать сытость. "
+            "Углеводы и жиры не нужно «обнулять» — их нужно грамотно настроить."
+        ),
+        "attention_items": [
+            "Если вес стоит — возможно, фактических калорий больше, чем кажется.",
+            "Если постоянная усталость — дефицит может быть слишком жёстким.",
+            "Если уходит сила — нужно проверить белок, сон и тренировочную нагрузку.",
+            "Цель — не просто меньше весить, а сохранить мышцы и улучшить форму тела.",
+        ],
+        "pain_point": (
+            "Многие начинают слишком жёстко: резко режут еду, устают, срываются и возвращаются назад. "
+            "Рабочий путь — не наказание, а понятная система."
+        ),
+        "trainer_extra": [
+            "какой дефицит выбрать без жёстких ограничений;",
+            "как снижать вес без потери мышц и энергии;",
+        ],
+    },
+    "maintenance": {
+        "title": "удержать форму",
+        "plain": (
+            "Вам важно держать баланс: получать примерно столько энергии, сколько тратите. "
+            "Основная задача — стабильный вес, нормальное самочувствие и регулярная активность."
+        ),
+        "calories_details": "Ваша задача — держаться рядом с текущим ориентиром.",
+        "calories_hint": "Если вес стабилен 2–3 недели, значит питание примерно совпадает с расходом.",
+        "macros_hint": (
+            "БЖУ помогает держать стабильность: не переедать хаотично, не проваливаться по белку "
+            "и не зависеть только от «ем как получится»."
+        ),
+        "attention_items": [
+            "Если вес постепенно растёт — калорий чуть больше, чем нужно.",
+            "Если вес падает без цели — калорий может быть мало.",
+            "Если нет энергии — стоит проверить сон, питание и нагрузку.",
+            "Поддержание — это не «ничего не делать», а стабильная система.",
+        ],
+        "pain_point": (
+            "Когда нет системы, форма постепенно «уплывает»: сегодня чуть больше, завтра меньше движения, "
+            "потом усталость — и результат теряется незаметно."
+        ),
+        "trainer_extra": [],
+    },
+    "general_fitness": {
+        "title": "улучшить физическую форму",
+        "plain": (
+            "Фокус не только на весе. Важно постепенно улучшать силу, выносливость, "
+            "подвижность, осанку и общее самочувствие."
+        ),
+        "calories_details": "Начните с текущего ориентира.",
+        "calories_hint": (
+            "Дальше корректировка зависит от того, что важнее: больше энергии, снижение жира, "
+            "рост силы или улучшение выносливости."
+        ),
+        "macros_hint": (
+            "БЖУ — это не диета, а ориентир. Он помогает понять, хватает ли телу строительного материала, "
+            "энергии и восстановления."
+        ),
+        "attention_items": [
+            "Не оценивайте прогресс только по весам.",
+            "Важны сила, выносливость, подвижность, осанка и самочувствие.",
+            "Слишком резкий старт часто приводит к откату.",
+            "Лучше стабильные 2–3 тренировки в неделю, чем рывок на 10 дней и срыв.",
+        ],
+        "pain_point": (
+            "Многие ждут мотивацию, но форму создаёт не мотивация, а повторяемая система: "
+            "понятные тренировки, питание и восстановление."
+        ),
+        "trainer_extra": [],
+    },
+}
 ACTIVITY_OPTIONS = [
     "Низкая активность",
     "Лёгкая активность",
@@ -131,6 +240,197 @@ def _safe_number(v: float | None) -> str:
     if abs(v - round(v)) < 1e-9:
         return str(int(round(v)))
     return str(round(v, 2)).replace(".", ",")
+
+
+def _round_calories(value: float) -> int:
+    return int(round(value / 10) * 10)
+
+
+def _normalize_goal(goal_text: str | None) -> str:
+    goal = (goal_text or "").strip().lower()
+    mapping = {
+        "набрать мышечную массу": "muscle_gain",
+        "набор мышечной массы": "muscle_gain",
+        "похудеть": "fat_loss",
+        "снизить вес": "fat_loss",
+        "снижение веса": "fat_loss",
+        "поддерживать форму": "maintenance",
+        "поддержание формы": "maintenance",
+        "удержать форму": "maintenance",
+        "улучшить форму": "general_fitness",
+        "общая физическая форма": "general_fitness",
+        "улучшить здоровье": "general_fitness",
+        "подтянуть тело": "general_fitness",
+        "улучшить выносливость": "general_fitness",
+        "начать тренироваться с нуля": "general_fitness",
+    }
+    return mapping.get(goal, "general_fitness")
+
+
+def _calculate_goal_calories(tdee_value: float, goal_type: str) -> int:
+    if goal_type == "muscle_gain":
+        return _round_calories(tdee_value * 1.1)
+    if goal_type == "fat_loss":
+        return _round_calories(tdee_value * 0.85)
+    return _round_calories(tdee_value)
+
+
+def _goal_macros(weight_kg: float, target_calories: int, goal_type: str) -> dict[str, int]:
+    if goal_type == "muscle_gain":
+        protein = weight_kg * 1.8
+        fat = weight_kg * 0.9
+    elif goal_type == "fat_loss":
+        protein = weight_kg * 2.0
+        fat = weight_kg * 0.8
+    else:
+        protein = weight_kg * 1.6
+        fat = weight_kg * 0.9
+
+    protein_cals = protein * 4
+    fat_cals = fat * 9
+    carbs = (target_calories - protein_cals - fat_cals) / 4
+    if carbs < 0:
+        logger.warning("Calculated negative carbs, fallback to 30g: goal=%s target_calories=%s", goal_type, target_calories)
+        carbs = 30.0
+
+    return {
+        "protein_g": int(round(protein)),
+        "fat_g": int(round(fat)),
+        "carbs_g": int(round(carbs)),
+    }
+
+
+def _client_data_block(profile: dict, goal_text: str) -> list[str]:
+    return [
+        "👤 <b>Данные клиента</b>",
+        f"{profile.get('full_name') or 'Клиент'}, {profile.get('age') or '—'} лет",
+        f"Пол: {_sex_label(profile.get('sex')) if profile.get('sex') else '—'}",
+        f"Рост: {_safe_number(profile.get('height_cm'))} см",
+        f"Вес: {_safe_number(profile.get('weight_kg'))} кг",
+        f"Цель: {goal_text or '—'}",
+    ]
+
+
+def _goal_explanation_block(goal_type: str) -> list[str]:
+    goal_data = GOAL_TYPE_TEXTS[goal_type]
+    return [
+        f"🎯 <b>Цель: {goal_data['title']}</b>",
+        "",
+        "<b>Простыми словами:</b>",
+        goal_data["plain"],
+    ]
+
+
+def _metrics_interpretation_block(payload: dict) -> list[str]:
+    lines = [
+        "⚖️ <b>Ваша отправная точка</b>",
+        f"ИМТ: {round(payload['bmi'], 2):.2f} — {payload['bmi_status'].lower()}",
+        f"Тип телосложения: {payload['body_type']}.",
+        f"Соотношение талии и бёдер: {round(payload['whr'], 2):.2f}.",
+        "",
+        "<b>Что это значит:</b>",
+        "Это стартовая картина по телосложению и текущему состоянию. "
+        "Дальше фокус — не на «идеальных цифрах», а на стабильном плане под вашу цель.",
+    ]
+    if payload.get("whr_status"):
+        lines.extend(
+            [
+                "",
+                f"Тип жироотложения: {payload['whr_status']}.",
+                "<b>Что это значит:</b>",
+                "Жир может распределяться неравномерно — это нормально. "
+                "Локально «сжечь» жир в одной зоне нельзя, работает только системный подход.",
+            ]
+        )
+    return lines
+
+
+def _calories_block(payload: dict, goal_type: str, target_calories: int) -> list[str]:
+    goal_data = GOAL_TYPE_TEXTS[goal_type]
+    lines = [
+        "🔥 <b>Энергия на день</b>",
+        f"Ваш ориентир: {_round_calories(payload['tdc'])} ккал/сутки.",
+        "",
+        "<b>Объяснение:</b>",
+        "Это примерная точка отсчёта. От неё зависит, будет ли вес расти, снижаться или стоять на месте.",
+        "",
+        goal_data["calories_details"],
+    ]
+    if goal_type in {"muscle_gain", "fat_loss"}:
+        lines.extend(["", f"Ориентир: {target_calories} ккал/сутки."])
+    elif goal_type == "maintenance":
+        lines.extend(["", f"Ориентир: {target_calories} ккал/сутки."])
+    else:
+        lines.extend(["", f"Стартовый ориентир: {target_calories} ккал/сутки."])
+    lines.extend(["", goal_data["calories_hint"]])
+    return lines
+
+
+def _macros_block(macros: dict[str, int], goal_type: str) -> list[str]:
+    goal_data = GOAL_TYPE_TEXTS[goal_type]
+    return [
+        "🍽️ <b>Белки, жиры и углеводы</b>",
+        f"Белки: {macros['protein_g']} г",
+        f"Жиры: {macros['fat_g']} г",
+        f"Углеводы: {macros['carbs_g']} г",
+        "",
+        "<b>Объяснение простым языком:</b>",
+        "Белок — материал для мышц и восстановления.",
+        "Жиры — гормоны, здоровье кожи, нервной системы и общее самочувствие.",
+        "Углеводы — энергия для тренировок, шагов и повседневной активности.",
+        "",
+        goal_data["macros_hint"],
+    ]
+
+
+def _attention_block(goal_type: str) -> list[str]:
+    return ["📌 <b>На что обратить внимание</b>", *[f"• {item}" for item in GOAL_TYPE_TEXTS[goal_type]["attention_items"]]]
+
+
+def _trainer_discussion_block(goal_type: str) -> list[str]:
+    common_items = [
+        "какой темп результата для вас безопасен;",
+        "сколько тренировок в неделю реально выдерживать;",
+        "какие упражнения подходят под ваш уровень;",
+        "есть ли ограничения по здоровью, суставам, спине, давлению;",
+        "как скорректировать питание под ваш режим жизни;",
+        "как отслеживать прогресс без паники и крайностей;",
+    ]
+    items = [*common_items, *GOAL_TYPE_TEXTS[goal_type]["trainer_extra"]]
+    return ["💬 <b>Что стоит обсудить с тренером</b>", *[f"• {item}" for item in items]]
+
+
+def _pain_point_block(goal_type: str) -> list[str]:
+    return ["🧠 <b>Частая ошибка</b>", GOAL_TYPE_TEXTS[goal_type]["pain_point"]]
+
+
+def _cta_block() -> list[str]:
+    return [
+        "🤝 <b>Хотите точнее?</b>",
+        "Этот отчёт — стартовая карта, а не персональная программа.",
+        "Чтобы цифры стали понятным планом действий, напишите Лене.",
+        "",
+        "Она поможет:",
+        "• разобрать вашу цель;",
+        "• учесть ограничения;",
+        "• подобрать безопасную нагрузку;",
+        "• настроить питание без крайностей;",
+        "• понять, что делать именно вам.",
+        "",
+        "💬 <b>Написать Лене</b>",
+    ]
+
+
+def _disclaimer_block(profile: dict) -> list[str]:
+    lines = [
+        "⚠️ <b>Важно</b>",
+        "Бот не ставит диагнозы и не заменяет врача. Расчёты являются ориентиром.",
+        "Если есть заболевания, боли, ограничения, беременность, восстановление после травм или операции — "
+        "нагрузку и питание нужно согласовывать со специалистом.",
+    ]
+    if profile.get("health_notes"):
+        lines.extend(["", f"Ограничения, которые вы указали: {profile['health_notes']}"])
+    return lines
 
 
 def _normalize_sex(sex_text: str) -> str:
@@ -561,53 +861,28 @@ def _ideal_weight_text(ideal_weight: float | tuple[float, float, float]) -> str:
 
 
 def _build_report_text(profile: dict, payload: dict) -> str:
-    lines = [
-        "📊 <b>Итоговый фитнес-отчёт</b>",
-        "",
-        "👤 <b>Ваши данные:</b>",
-        f"Имя: {profile.get('full_name') or '—'}",
-        f"Пол: {_sex_label(profile.get('sex')) if profile.get('sex') else '—'}",
-        f"Возраст: {profile.get('age') or '—'}",
-        f"Рост: {_safe_number(profile.get('height_cm'))} см",
-        f"Вес: {_safe_number(profile.get('weight_kg'))} кг",
-        f"Цель: {profile.get('goal') or '—'}",
-        "",
-        "🧮 <b>Расчёты:</b>",
-        f"ИМТ: {_safe_number(payload['bmi'])}",
-        f"Категория ИМТ: {payload['bmi_status']}",
-        f"Ориентир по весу: {_ideal_weight_text(payload['ideal_weight'])}",
-        f"Тип телосложения: {payload['body_type']}",
-        f"Соотношение талия/бёдра: {_safe_number(payload['whr'])}",
-        f"Тип жироотложения: {payload['whr_status']}",
-        f"Калории: {_safe_number(payload['tdc'])} ккал/сутки",
-        (
-            "БЖУ: "
-            f"Б {_safe_number(payload['macros']['protein_g'])} г / "
-            f"Ж {_safe_number(payload['macros']['fat_g'])} г / "
-            f"У {_safe_number(payload['macros']['carbs_g'])} г"
-        ),
-        "",
-        "⚠️ <b>Ограничения:</b>",
-        f"{profile.get('health_notes') or 'Не указаны'}",
-        "",
-        "📌 <b>Предварительный вывод:</b>",
-        "• Показатели дают стартовую картину для безопасного начала тренировок.",
-        "• Для результата важно синхронизировать нагрузку, питание и восстановление.",
-        "• При ограничениях по здоровью нагрузку повышайте только постепенно.",
-        "",
-        "💬 <b>Что обсудить с тренером:</b>",
-        "• цель;",
-        "• ограничения по здоровью;",
-        "• безопасный уровень нагрузки;",
-        "• питание;",
-        "• частоту тренировок;",
-        "• индивидуальный план.",
-        "",
-        "⚠️ <b>Важно:</b>",
-        "Это предварительная оценка. Бот не ставит диагноз и не заменяет врача или тренера.",
-        "",
-        "Если хотите разобрать свою ситуацию точнее — напишите Лене. У каждого человека разные цели, ограничения и стартовый уровень.",
+    goal_text = profile.get("goal") or "—"
+    goal_type = _normalize_goal(goal_text)
+    target_calories = _calculate_goal_calories(payload["tdc"], goal_type)
+    macros = _goal_macros(profile["weight_kg"], target_calories, goal_type)
+
+    lines = ["📊 <b>Ваш фитнес-профиль</b>", ""]
+    blocks = [
+        _client_data_block(profile, goal_text),
+        _goal_explanation_block(goal_type),
+        _metrics_interpretation_block(payload),
+        _calories_block(payload, goal_type, target_calories),
+        _macros_block(macros, goal_type),
+        _attention_block(goal_type),
+        _trainer_discussion_block(goal_type),
+        _pain_point_block(goal_type),
+        _cta_block(),
+        _disclaimer_block(profile),
     ]
+    for idx, block in enumerate(blocks):
+        lines.extend(block)
+        if idx != len(blocks) - 1:
+            lines.append("")
     return "\n".join(lines)
 
 
