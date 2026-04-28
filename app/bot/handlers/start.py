@@ -1,5 +1,7 @@
 """Start command and global menu handlers."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 from aiogram import F, Router
