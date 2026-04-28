@@ -13,12 +13,16 @@ from app.bot.keyboards import (
     BUTTON_CANCEL,
     BUTTON_CONTACT,
     BUTTON_HOME_MENU,
+    BUTTON_UPDATE_BOT,
     get_contact_trainer_keyboard,
     get_main_menu_keyboard,
 )
 from app.bot.texts import get_welcome_text
+from app.bot.version import BOT_VERSION
+from app.db import Database
 
 router = Router(name=__name__)
+db = Database()
 
 
 def _resolve_welcome_video_path() -> Path | None:
@@ -38,6 +42,8 @@ def _resolve_welcome_video_path() -> Path | None:
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
+    if message.from_user:
+        db.set_user_bot_version(message.from_user.id, BOT_VERSION)
     welcome_text = get_welcome_text()
     video_path = _resolve_welcome_video_path()
 
@@ -50,6 +56,11 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         return
 
     await message.answer(welcome_text, reply_markup=get_main_menu_keyboard())
+
+
+@router.message(F.text == BUTTON_UPDATE_BOT)
+async def refresh_bot(message: Message, state: FSMContext) -> None:
+    await cmd_start(message, state)
 
 
 @router.message(F.text == BUTTON_HOME_MENU)
