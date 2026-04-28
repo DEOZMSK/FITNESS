@@ -9,6 +9,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
 from app.bot.handlers import router as main_router
+from app.bot.middlewares import VersionGateMiddleware
 from app.config import load_settings
 from app.db import Database
 from app.services import retry_unsent_leads
@@ -34,6 +35,9 @@ async def main() -> None:
     await retry_unsent_leads(bot)
 
     dp = Dispatcher()
+    version_gate = VersionGateMiddleware(database=database)
+    dp.message.middleware(version_gate)
+    dp.callback_query.middleware(version_gate)
 
     dp.include_router(main_router)
 

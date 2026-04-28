@@ -5,6 +5,7 @@ from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 BUTTON_ABOUT = "👩‍🏫 Обо мне"
 BUTTON_DIAGNOSTICS = "🧪 Фитнес-диагностика"
 BUTTON_CONTACT = "💬 Написать Лене"
+BUTTON_UPDATE_BOT = "🔄 Обновить бота"
 
 BUTTON_RESULT_REPORT = "📊 Итоговый отчёт"
 BUTTON_RESULT_MY_DATA = "👤 Мои данные"
@@ -53,5 +54,12 @@ def get_existing_profile_actions_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text=BUTTON_VIEW_RESULTS), KeyboardButton(text=BUTTON_RETAKE)],
             [KeyboardButton(text="🏠 Главное меню")],
         ],
+        resize_keyboard=True,
+    )
+
+
+def get_update_bot_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=BUTTON_UPDATE_BOT)]],
         resize_keyboard=True,
     )

@@ -26,11 +26,13 @@ from .main_menu import (
     BUTTON_SEX_WOMAN,
     BUTTON_SKIP_PRESSURE,
     BUTTON_SKIP_SITTING,
+    BUTTON_UPDATE_BOT,
     BUTTON_VIEW_RESULTS,
     BUTTON_YES,
     get_existing_profile_actions_keyboard,
     get_main_menu_keyboard,
     get_post_diagnostics_keyboard,
+    get_update_bot_keyboard,
 )
 from .navigation import BUTTON_BACK, BUTTON_CANCEL, BUTTON_HOME_MENU, BUTTON_SKIP, get_scenario_skip_keyboard
 
@@ -62,10 +64,12 @@ __all__ = (
     "BUTTON_SKIP",
     "BUTTON_SKIP_PRESSURE",
     "BUTTON_SKIP_SITTING",
+    "BUTTON_UPDATE_BOT",
     "BUTTON_VIEW_RESULTS",
     "BUTTON_YES",
     "get_existing_profile_actions_keyboard",
     "get_main_menu_keyboard",
     "get_post_diagnostics_keyboard",
+    "get_update_bot_keyboard",
     "get_scenario_skip_keyboard",
 )

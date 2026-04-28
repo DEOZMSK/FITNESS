@@ -49,6 +49,7 @@ class Database:
                     username TEXT,
                     first_name TEXT,
                     last_name TEXT,
+                    bot_version TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
@@ -160,6 +161,12 @@ class Database:
             )
             self._ensure_column(
                 conn=conn,
+                table_name="users",
+                column_name="bot_version",
+                column_sql="bot_version TEXT",
+            )
+            self._ensure_column(
+                conn=conn,
                 table_name="diagnosis_sessions",
                 column_name="lead_sent",
                 column_sql="lead_sent INTEGER NOT NULL DEFAULT 1",
@@ -255,6 +262,31 @@ class Database:
             if row is None:
                 raise RuntimeError("Failed to upsert user")
             return int(row["id"])
+
+    def get_user_bot_version(self, telegram_id: int) -> str | None:
+        """Return stored bot version for user or None."""
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT bot_version FROM users WHERE telegram_id = ?",
+                (telegram_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return row["bot_version"]
+
+    def set_user_bot_version(self, telegram_id: int, bot_version: str) -> None:
+        """Persist bot version for the user."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO users (telegram_id, bot_version)
+                VALUES (?, ?)
+                ON CONFLICT(telegram_id) DO UPDATE SET
+                    bot_version = excluded.bot_version,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (telegram_id, bot_version),
+            )
 
     def save_diagnosis_session_and_calculation(
         self,
