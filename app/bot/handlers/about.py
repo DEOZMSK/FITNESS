@@ -3,6 +3,7 @@
 import logging
 import random
 from pathlib import Path
+from typing import Optional
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -112,7 +113,7 @@ def _build_random_review_text(review: dict) -> str:
     )
 
 
-def _pick_random_review_index(published_reviews: list[dict], last_index: int | None) -> int:
+def _pick_random_review_index(published_reviews: list[dict], last_index: Optional[int]) -> int:
     indexes = list(range(len(published_reviews)))
     if len(indexes) > 1 and last_index in indexes:
         indexes.remove(last_index)
