@@ -126,6 +126,8 @@ def build_contacts_text() -> str:
         "📞 <b>Контакты</b>\n\n"
         f"Telegram: {contacts.get('telegram', '—')}\n"
         f"Ссылка: {contacts.get('cta_url', '—')}\n\n"
+        "Сайт: https://www.efitnes.site/\n"
+        "Создатель бота (тех. вопросы): https://t.me/BAPHbl\n\n"
         "Если хотите начать без хаоса — напишите Лене, она подскажет первый шаг."
     )
 
@@ -169,7 +171,9 @@ def _build_about_text() -> str:
         "Здесь не про “идеальное тело к понедельнику”.\n\n"
         "Здесь про тело, в котором легче жить, двигаться и чувствовать себя увереннее 🌿\n\n"
         "Написать в директ можно через "
-        "<a href=\"https://www.instagram.com/soroskanele/\">Instagram</a>.\n\n"
+        "<a href=\"https://www.instagram.com/soroskanele/\">Instagram*</a>.\n"
+        "* Instagram принадлежит Meta Platforms Inc., деятельность которой признана экстремистской и запрещена на территории РФ.\n"
+        "Сайт: https://www.efitnes.site/\n\n"
         "______\n"
         "Выберите раздел ниже 👇"
     )
