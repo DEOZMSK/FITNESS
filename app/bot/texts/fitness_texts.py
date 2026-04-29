@@ -8,7 +8,7 @@ from html import escape
 def get_welcome_text() -> str:
     return (
         "Привет! 👋\n"
-        "https://www.efitnes.site/\n\n"
+        "\n"
         "Это короткая фитнес-диагностика, чтобы Лена дала точные рекомендации.\n\n"
         "Перед стартом: "
         "<a href=\"https://www.efitnes.site/telegram-disclaimer\">дисклеймер</a>, "
