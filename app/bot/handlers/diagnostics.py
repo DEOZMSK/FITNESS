@@ -62,6 +62,7 @@ from app.calculators.calories import bmr_mifflin_st_jeor, goal_calories, goal_ma
 from app.data.contraindications import SAFE_STOP_MESSAGE, STOP_FACTORS
 from app.db import Database
 from app.services import send_diagnostics_summary
+from app.services.analytics import log_event
 
 router = Router(name=__name__)
 logger = logging.getLogger(__name__)
@@ -559,6 +560,8 @@ def _ask_number(field: str) -> str:
 
 async def _start_questionnaire(message: Message, state: FSMContext) -> None:
     await state.clear()
+    _, user_id = await _user_context(message)
+    log_event("diagnostics_start", telegram_id=message.from_user.id, user_id=user_id)
     await state.set_state(QuickDiagnosticsStates.waiting_for_name)
     await message.answer(
         "Сейчас я задам несколько вопросов, чтобы собрать первичные данные и подготовить фитнес-отчёт. "
@@ -583,6 +586,8 @@ async def diagnostics_entry(message: Message, state: FSMContext) -> None:
 
 @router.message(F.text == BUTTON_VIEW_RESULTS)
 async def show_prev_results(message: Message) -> None:
+    _, user_id = await _user_context(message)
+    log_event("diagnostics_view_results", telegram_id=message.from_user.id, user_id=user_id)
     await message.answer("Открываю сохранённые результаты.", reply_markup=get_post_diagnostics_keyboard())
 
 
@@ -915,6 +920,8 @@ async def q_consult(message: Message, state: FSMContext) -> None:
     await state.update_data(wants_consultation=wants_consultation)
 
     if wants_consultation:
+        _, user_id = await _user_context(message)
+        log_event("consultation_interest", telegram_id=message.from_user.id, user_id=user_id)
         await message.answer(
             "Откройте direct по кнопке ниже и напишите ваш вопрос.",
             reply_markup=get_instagram_dm_keyboard(),
@@ -1064,9 +1071,13 @@ async def _finish_diagnostics(message: Message, state: FSMContext) -> None:
     goal_resolved, goal_original, decision_notes = _resolve_goal_with_contradictions(profile, payload)
     stop_level, risk_flags = _detect_stop_level(profile, payload)
     if stop_level == "hard_stop":
+        _, user_id_tmp = await _user_context(message)
+        log_event("diagnostics_hard_stop", telegram_id=message.from_user.id, user_id=user_id_tmp)
         goal_resolved = "consultation_only"
         decision_notes.append("Сработал hard stop: обычный фитнес-flow остановлен.")
     elif stop_level == "soft_stop":
+        _, user_id_tmp = await _user_context(message)
+        log_event("diagnostics_soft_stop", telegram_id=message.from_user.id, user_id=user_id_tmp)
         if goal_resolved == "fat_loss":
             goal_resolved = "recomposition"
             decision_notes.append("При soft stop агрессивный дефицит отключён, выбран более осторожный сценарий.")
@@ -1115,6 +1126,7 @@ async def _finish_diagnostics(message: Message, state: FSMContext) -> None:
         },
     )
     db.save_calculation_history(user_id, "unified_diagnostics", enriched_payload)
+    log_event("diagnostics_complete", telegram_id=message.from_user.id, user_id=user_id)
 
     await message.answer(report_text, reply_markup=get_contact_trainer_keyboard())
     await message.answer("Данные сохранены. Меню результатов:", reply_markup=get_post_diagnostics_keyboard())

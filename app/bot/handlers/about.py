@@ -23,6 +23,7 @@ from app.data.reviews import reviews
 from app.data.trainer_profile import trainer_profile
 from app.db import Database
 from app.services import DONATION_MIN_AMOUNT, create_invoice, send_payment_event
+from app.services.analytics import log_event
 
 router = Router(name=__name__)
 logger = logging.getLogger(__name__)
@@ -286,6 +287,14 @@ async def show_profile(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "about:services")
 async def show_services(callback: CallbackQuery) -> None:
     """Show only active services."""
+    if callback.from_user:
+        user_id = db.upsert_user(
+            telegram_id=callback.from_user.id,
+            username=callback.from_user.username,
+            first_name=callback.from_user.first_name,
+            last_name=callback.from_user.last_name,
+        )
+        log_event("services_open", telegram_id=callback.from_user.id, user_id=user_id)
     await _safe_edit_or_answer(
         callback,
         _build_services_text(),
@@ -295,6 +304,14 @@ async def show_services(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "about:review_random")
 async def show_random_review(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user:
+        user_id = db.upsert_user(
+            telegram_id=callback.from_user.id,
+            username=callback.from_user.username,
+            first_name=callback.from_user.first_name,
+            last_name=callback.from_user.last_name,
+        )
+        log_event("review_open", telegram_id=callback.from_user.id, user_id=user_id)
     published_reviews = [
         (index, item)
         for index, item in enumerate(reviews)
@@ -336,6 +353,14 @@ async def show_reviews(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "about:contacts")
 async def show_contacts(callback: CallbackQuery) -> None:
     """Show contacts screen."""
+    if callback.from_user:
+        user_id = db.upsert_user(
+            telegram_id=callback.from_user.id,
+            username=callback.from_user.username,
+            first_name=callback.from_user.first_name,
+            last_name=callback.from_user.last_name,
+        )
+        log_event("contacts_open", telegram_id=callback.from_user.id, user_id=user_id)
     await _safe_edit_or_answer(
         callback,
         build_contacts_text(),
@@ -346,6 +371,14 @@ async def show_contacts(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "donate:start")
 async def start_donation_flow(callback: CallbackQuery, state: FSMContext) -> None:
     """Enter donation FSM by requesting amount."""
+    if callback.from_user:
+        user_id = db.upsert_user(
+            telegram_id=callback.from_user.id,
+            username=callback.from_user.username,
+            first_name=callback.from_user.first_name,
+            last_name=callback.from_user.last_name,
+        )
+        log_event("donate_start", telegram_id=callback.from_user.id, user_id=user_id)
     if not callback.message:
         await callback.answer()
         return
@@ -416,6 +449,17 @@ async def successful_payment_handler(message: Message) -> None:
             "purpose": "donation",
         },
     )
+    log_event(
+        "payment_success",
+        telegram_id=message.from_user.id,
+        user_id=user_id,
+        meta={
+            "amount_rub": amount_rub,
+            "currency": message.successful_payment.currency,
+            "purpose": "donation",
+        },
+    )
+
     try:
         await send_payment_event(
             bot=message.bot,
