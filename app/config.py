@@ -47,22 +47,28 @@ class Settings(BaseModel):
 
 def _read_env() -> dict[str, Any]:
     """Read settings from environment variables."""
-    admin_ids = os.getenv("ADMIN_IDS", "").strip()
-    fallback_admin_id = os.getenv("ADMIN_ID", "5948629306").strip()
+    def _env_or_default(name: str, default: str) -> str:
+        value = os.getenv(name)
+        if value is None or not value.strip():
+            return default
+        return value.strip()
+
+    admin_ids = _env_or_default("ADMIN_IDS", "")
+    fallback_admin_id = _env_or_default("ADMIN_ID", "5948629306")
     normalized_admin_ids = admin_ids or fallback_admin_id
 
     return {
-        "telegram_bot_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
-        "provider_token": os.getenv("PROVIDER_TOKEN", ""),
-        "shop_id": os.getenv("SHOP_ID", ""),
-        "secret_key": os.getenv("SECRET_KEY", ""),
+        "telegram_bot_token": os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
+        "provider_token": os.getenv("PROVIDER_TOKEN", "").strip(),
+        "shop_id": os.getenv("SHOP_ID", "").strip(),
+        "secret_key": os.getenv("SECRET_KEY", "").strip(),
         "admin_id": fallback_admin_id,
         "admin_ids": normalized_admin_ids,
-        "database_path": os.getenv("DATABASE_PATH", "fitness.db"),
-        "timezone": os.getenv("TIMEZONE", "Europe/Moscow"),
-        "daily_report_hour": os.getenv("DAILY_REPORT_HOUR", "22"),
-        "daily_report_minute": os.getenv("DAILY_REPORT_MINUTE", "0"),
-        "report_check_interval_seconds": os.getenv("REPORT_CHECK_INTERVAL_SECONDS", "86400"),
+        "database_path": _env_or_default("DATABASE_PATH", "fitness.db"),
+        "timezone": _env_or_default("TIMEZONE", "Europe/Moscow"),
+        "daily_report_hour": _env_or_default("DAILY_REPORT_HOUR", "22"),
+        "daily_report_minute": _env_or_default("DAILY_REPORT_MINUTE", "0"),
+        "report_check_interval_seconds": _env_or_default("REPORT_CHECK_INTERVAL_SECONDS", "86400"),
     }
 
 

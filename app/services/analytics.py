@@ -44,18 +44,18 @@ def _ensure_events_table(conn: sqlite3.Connection) -> None:
             event_name TEXT NOT NULL,
             telegram_id INTEGER,
             user_id INTEGER,
-            meta_json TEXT,
+            meta TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
 
 
-def _safe_parse_meta(meta_json: str | None) -> dict[str, Any] | None:
-    if not meta_json:
+def _safe_parse_meta(meta_raw: str | None) -> dict[str, Any] | None:
+    if not meta_raw:
         return None
     try:
-        parsed = json.loads(meta_json)
+        parsed = json.loads(meta_raw)
     except (TypeError, ValueError, json.JSONDecodeError):
         return None
     if isinstance(parsed, dict):
@@ -70,23 +70,26 @@ def log_event(
     meta: dict | None = None,
 ) -> None:
     """Persist a single analytics event in SQLite."""
-    from app.config import load_settings
+    try:
+        from app.config import load_settings
 
-    settings = load_settings()
-    serialized_meta = None
-    if meta is not None:
-        serialized_meta = json.dumps(meta, ensure_ascii=False)
+        settings = load_settings()
+        serialized_meta = None
+        if meta is not None:
+            serialized_meta = json.dumps(meta, ensure_ascii=False)
 
-    with _connection(settings.database_path) as conn:
-        _ensure_events_table(conn)
-        conn.execute(
-            """
-            INSERT INTO analytics_events (event_name, telegram_id, user_id, meta_json)
-            VALUES (?, ?, ?, ?)
-            """,
-            (event_name, telegram_id, user_id, serialized_meta),
-        )
-        conn.commit()
+        with _connection(settings.database_path) as conn:
+            _ensure_events_table(conn)
+            conn.execute(
+                """
+                INSERT INTO analytics_events (event_name, telegram_id, user_id, meta)
+                VALUES (?, ?, ?, ?)
+                """,
+                (event_name, telegram_id, user_id, serialized_meta),
+            )
+            conn.commit()
+    except Exception:
+        logger.exception("Failed to log analytics event: %s", event_name)
 
 
 def get_event_stats_for_period(start_dt: datetime, end_dt: datetime) -> dict[str, Any]:
@@ -101,7 +104,7 @@ def get_event_stats_for_period(start_dt: datetime, end_dt: datetime) -> dict[str
         _ensure_events_table(conn)
         rows = conn.execute(
             """
-            SELECT event_name, telegram_id, user_id, meta_json, created_at
+            SELECT event_name, telegram_id, user_id, meta, created_at
             FROM analytics_events
             WHERE created_at >= ? AND created_at < ?
             ORDER BY created_at ASC
@@ -124,7 +127,7 @@ def get_event_stats_for_period(start_dt: datetime, end_dt: datetime) -> dict[str
             unique_users.add(f"usr:{user_id}")
 
         events_counter[row["event_name"]] += 1
-        _safe_parse_meta(row["meta_json"])
+        _safe_parse_meta(row["meta"])
 
     return {
         "total_events": len(rows),
@@ -179,21 +182,17 @@ def build_daily_report_text(report_date: date, stats: dict[str, Any]) -> str:
 
 
 async def send_yesterday_report_if_due(bot: Bot, settings: Settings) -> None:
-    """Send yesterday's report after the configured local daily-report time."""
-    local_tz = ZoneInfo(settings.timezone)
-    now_local = datetime.now(local_tz)
-    scheduled_local = now_local.replace(
-        hour=settings.daily_report_hour,
-        minute=settings.daily_report_minute,
-        second=0,
-        microsecond=0,
-    )
-    if now_local < scheduled_local:
-        return
+    """Send daily report for current local day (00:00 -> now)."""
+    try:
+        local_tz = ZoneInfo(settings.timezone)
+    except Exception:
+        logger.exception("Invalid timezone '%s', fallback to Europe/Moscow", settings.timezone)
+        local_tz = ZoneInfo("Europe/Moscow")
 
-    report_date_local = now_local.date() - timedelta(days=1)
+    now_local = datetime.now(local_tz)
+    report_date_local = now_local.date()
     start_local = datetime.combine(report_date_local, time.min, tzinfo=local_tz)
-    end_local = start_local + timedelta(days=1)
+    end_local = now_local
 
     stats = get_event_stats_for_period(
         start_local.astimezone(timezone.utc),
@@ -225,9 +224,15 @@ async def send_yesterday_report_if_due(bot: Bot, settings: Settings) -> None:
 
 
 async def daily_reports_worker(bot: Bot, settings: Settings) -> None:
-    """Background worker that sleeps until the next local report time."""
+    """Background worker: sleeps until next scheduled local run time."""
+    while True:
+        try:
+            local_tz = ZoneInfo(settings.timezone)
+        except Exception:
+            logger.exception("Invalid timezone '%s', fallback to Europe/Moscow", settings.timezone)
+            local_tz = ZoneInfo("Europe/Moscow")
 
-    def _seconds_until_next_report_run(now_local: datetime) -> float:
+        now_local = datetime.now(local_tz)
         scheduled_today = now_local.replace(
             hour=settings.daily_report_hour,
             minute=settings.daily_report_minute,
@@ -235,21 +240,14 @@ async def daily_reports_worker(bot: Bot, settings: Settings) -> None:
             microsecond=0,
         )
         if now_local < scheduled_today:
-            target = scheduled_today
+            next_run = scheduled_today
         else:
-            target = scheduled_today + timedelta(days=1)
-        return max((target - now_local).total_seconds(), 0.0)
+            next_run = scheduled_today + timedelta(days=1)
 
-    local_tz = ZoneInfo(settings.timezone)
-
-    while True:
+        sleep_seconds = max((next_run - now_local).total_seconds(), 60.0)
+        await asyncio.sleep(sleep_seconds)
         try:
             await send_yesterday_report_if_due(bot, settings)
         except Exception:
-            logger.exception("Failed to send yesterday analytics report")
-
-        now_local = datetime.now(local_tz)
-        sleep_seconds = _seconds_until_next_report_run(now_local)
-        if sleep_seconds <= 0:
-            sleep_seconds = float(max(settings.report_check_interval_seconds, 1))
-        await asyncio.sleep(sleep_seconds)
+            logger.exception("Failed to send daily analytics report")
+            await asyncio.sleep(3600)
