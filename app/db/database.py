@@ -157,6 +157,28 @@ class Database:
                     is_active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+
+                CREATE TABLE IF NOT EXISTS analytics_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    telegram_id INTEGER,
+                    user_id INTEGER,
+                    event_name TEXT NOT NULL,
+                    meta TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS daily_reports_sent (
+                    report_date TEXT NOT NULL,
+                    recipient_id INTEGER NOT NULL,
+                    sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (report_date, recipient_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_analytics_events_created_at
+                    ON analytics_events(created_at);
+
+                CREATE INDEX IF NOT EXISTS idx_analytics_events_event_name_created_at
+                    ON analytics_events(event_name, created_at);
                 """
             )
             self._ensure_column(
