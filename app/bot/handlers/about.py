@@ -27,6 +27,8 @@ from app.services import DONATION_MIN_AMOUNT, create_invoice, send_payment_event
 router = Router(name=__name__)
 logger = logging.getLogger(__name__)
 ABOUT_PHOTO_PATH = Path("/data/me.png")
+DOIPOSLE_DIR = Path("/data/doiposle")
+TELEGRAM_CAPTION_LIMIT = 1024
 
 
 def _get_contact_url() -> str:
@@ -113,12 +115,52 @@ def _build_random_review_text(review: dict) -> str:
     )
 
 
-def _pick_random_review_index(published_reviews: list[dict], last_index: Optional[int]) -> int:
+def _pick_random_review_index(published_reviews: list[tuple[int, dict]], last_index: Optional[int]) -> int:
     indexes = list(range(len(published_reviews)))
     if len(indexes) > 1 and last_index in indexes:
         indexes.remove(last_index)
     return random.choice(indexes)
 
+
+
+
+def _get_review_photo_path(review_index: int) -> Path:
+    return DOIPOSLE_DIR / f"{11 + review_index}.jpg"
+
+
+async def _answer_review_with_photo(
+    callback: CallbackQuery,
+    review_text: str,
+    review_index: int,
+    reply_markup: InlineKeyboardMarkup,
+) -> None:
+    if not callback.message:
+        await callback.answer()
+        return
+
+    photo_path = _get_review_photo_path(review_index)
+    if photo_path.exists() and photo_path.is_file():
+        photo = FSInputFile(photo_path)
+        if len(review_text) <= TELEGRAM_CAPTION_LIMIT:
+            await callback.message.answer_photo(
+                photo=photo,
+                caption=review_text,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+        else:
+            await callback.message.answer_photo(photo=photo)
+            await callback.message.answer(
+                review_text,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+    else:
+        logger.warning("Review photo is missing: %s", photo_path)
+        await _safe_edit_or_answer(callback, review_text, reply_markup)
+        return
+
+    await callback.answer()
 
 def build_contacts_text() -> str:
     contacts = trainer_profile.get("contacts", {})
@@ -253,7 +295,11 @@ async def show_services(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "about:review_random")
 async def show_random_review(callback: CallbackQuery, state: FSMContext) -> None:
-    published_reviews = [item for item in reviews if item.get("is_published", True)]
+    published_reviews = [
+        (index, item)
+        for index, item in enumerate(reviews)
+        if item.get("is_published", True)
+    ]
 
     if not published_reviews:
         await _safe_edit_or_answer(
@@ -268,13 +314,16 @@ async def show_random_review(callback: CallbackQuery, state: FSMContext) -> None
     if not isinstance(last_index, int):
         last_index = None
 
-    current_index = _pick_random_review_index(published_reviews, last_index)
-    await state.update_data(last_review_index=current_index)
+    current_position = _pick_random_review_index(published_reviews, last_index)
+    await state.update_data(last_review_index=current_position)
 
-    await _safe_edit_or_answer(
-        callback,
-        _build_random_review_text(published_reviews[current_index]),
-        get_review_keyboard(),
+    original_index, review = published_reviews[current_position]
+    review_text = _build_random_review_text(review)
+    await _answer_review_with_photo(
+        callback=callback,
+        review_text=review_text,
+        review_index=original_index,
+        reply_markup=get_review_keyboard(),
     )
 
 
