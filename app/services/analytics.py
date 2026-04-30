@@ -225,25 +225,31 @@ async def send_yesterday_report_if_due(bot: Bot, settings: Settings) -> None:
 
 
 async def daily_reports_worker(bot: Bot, settings: Settings) -> None:
-    """Background worker that checks whether yesterday report should be sent."""
-    last_sent_for_date: date | None = None
+    """Background worker that sleeps until the next local report time."""
 
-    while True:
-        local_tz = ZoneInfo(settings.timezone)
-        now_local = datetime.now(local_tz)
-        report_date_local = now_local.date() - timedelta(days=1)
-        scheduled_local = now_local.replace(
+    def _seconds_until_next_report_run(now_local: datetime) -> float:
+        scheduled_today = now_local.replace(
             hour=settings.daily_report_hour,
             minute=settings.daily_report_minute,
             second=0,
             microsecond=0,
         )
+        if now_local < scheduled_today:
+            target = scheduled_today
+        else:
+            target = scheduled_today + timedelta(days=1)
+        return max((target - now_local).total_seconds(), 0.0)
 
-        if now_local >= scheduled_local and last_sent_for_date != report_date_local:
-            try:
-                await send_yesterday_report_if_due(bot, settings)
-                last_sent_for_date = report_date_local
-            except Exception:
-                logger.exception("Failed to send yesterday analytics report")
+    local_tz = ZoneInfo(settings.timezone)
 
-        await asyncio.sleep(settings.report_check_interval_seconds)
+    while True:
+        try:
+            await send_yesterday_report_if_due(bot, settings)
+        except Exception:
+            logger.exception("Failed to send yesterday analytics report")
+
+        now_local = datetime.now(local_tz)
+        sleep_seconds = _seconds_until_next_report_run(now_local)
+        if sleep_seconds <= 0:
+            sleep_seconds = float(max(settings.report_check_interval_seconds, 1))
+        await asyncio.sleep(sleep_seconds)
