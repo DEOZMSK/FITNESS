@@ -22,6 +22,7 @@ from app.bot.keyboards import (
 from app.bot.texts import get_welcome_text
 from app.bot.version import BOT_VERSION
 from app.db import Database
+from app.services.analytics import log_event
 
 router = Router(name=__name__)
 db = Database()
@@ -44,8 +45,16 @@ def _resolve_welcome_video_path() -> Path | None:
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
+    user_id = None
     if message.from_user:
         db.set_user_bot_version(message.from_user.id, BOT_VERSION)
+        user_id = db.upsert_user(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+        )
+        log_event("start", telegram_id=message.from_user.id, user_id=user_id)
     welcome_text = get_welcome_text()
     video_path = _resolve_welcome_video_path()
 
@@ -79,9 +88,25 @@ async def cancel(message: Message, state: FSMContext) -> None:
 
 @router.message(F.text == BUTTON_ABOUT)
 async def open_about(message: Message) -> None:
+    if message.from_user:
+        user_id = db.upsert_user(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+        )
+        log_event("about_open", telegram_id=message.from_user.id, user_id=user_id)
     await show_about_menu_message(message)
 
 
 @router.message(F.text == BUTTON_CONTACT)
 async def open_contact(message: Message) -> None:
+    if message.from_user:
+        user_id = db.upsert_user(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+        )
+        log_event("contact_open", telegram_id=message.from_user.id, user_id=user_id)
     await message.answer(build_contacts_text(), reply_markup=get_contact_trainer_keyboard())
