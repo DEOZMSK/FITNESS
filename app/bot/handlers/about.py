@@ -27,6 +27,7 @@ from app.services.analytics import log_event
 
 router = Router(name=__name__)
 logger = logging.getLogger(__name__)
+db = Database()
 ABOUT_PHOTO_PATH = Path("/data/me.png")
 DOIPOSLE_DIR = Path("/data/doiposle")
 TELEGRAM_CAPTION_LIMIT = 1024
