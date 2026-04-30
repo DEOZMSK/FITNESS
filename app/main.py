@@ -13,6 +13,7 @@ from app.bot.middlewares import VersionGateMiddleware
 from app.config import load_settings
 from app.db import Database
 from app.services import retry_unsent_leads
+from app.services.analytics import daily_reports_worker
 
 
 async def main() -> None:
@@ -41,7 +42,15 @@ async def main() -> None:
 
     dp.include_router(main_router)
 
-    await dp.start_polling(bot)
+    report_task = asyncio.create_task(daily_reports_worker(bot, settings))
+    try:
+        await dp.start_polling(bot)
+    finally:
+        report_task.cancel()
+        try:
+            await report_task
+        except asyncio.CancelledError:
+            pass
 
 
 if __name__ == "__main__":
