@@ -14,6 +14,8 @@ from zoneinfo import ZoneInfo
 from aiogram import Bot
 
 from app.config import Settings
+from app.db import Database
+from app.services.admin_notify import get_admin_recipients
 
 logger = logging.getLogger(__name__)
 
@@ -198,9 +200,28 @@ async def send_yesterday_report_if_due(bot: Bot, settings: Settings) -> None:
         end_local.astimezone(timezone.utc),
     )
     text = build_daily_report_text(report_date_local, stats)
+    report_date_key = report_date_local.isoformat()
+    db = Database()
+    delivery_errors: list[int] = []
 
-    for admin_id in settings.admin_ids:
-        await bot.send_message(admin_id, text)
+    for admin_id in get_admin_recipients():
+        if db.has_daily_report_been_sent(report_date_key, admin_id):
+            continue
+        try:
+            await bot.send_message(admin_id, text)
+            db.mark_daily_report_sent(report_date_key, admin_id)
+        except Exception:
+            delivery_errors.append(admin_id)
+            logger.exception(
+                "Failed to send daily analytics report report_date=%s admin_id=%s",
+                report_date_key,
+                admin_id,
+            )
+
+    if delivery_errors:
+        raise RuntimeError(
+            f"Failed daily report delivery for admin recipients: {delivery_errors}"
+        )
 
 
 async def daily_reports_worker(bot: Bot, settings: Settings) -> None:

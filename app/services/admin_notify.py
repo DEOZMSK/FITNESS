@@ -25,6 +25,11 @@ def _admin_recipients() -> list[int]:
     return recipients
 
 
+def get_admin_recipients() -> list[int]:
+    """Public accessor for normalized admin recipients list."""
+    return _admin_recipients()
+
+
 def _stringify_value(value: Any) -> str:
     if value is None:
         return "—"
