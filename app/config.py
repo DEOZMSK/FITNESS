@@ -19,10 +19,10 @@ class Settings(BaseModel):
     admin_id: int = 5948629306
     admin_ids: list[int] = [5948629306]
     database_path: str = "fitness.db"
-    timezone: str = "UTC"
+    timezone: str = "Europe/Moscow"
     daily_report_hour: int = 9
-    daily_report_minute: int = 0
-    report_check_interval_seconds: int = 60
+    daily_report_minute: int = 5
+    report_check_interval_seconds: int = 10 * 60
 
     @field_validator("admin_ids", mode="before")
     @classmethod
@@ -59,10 +59,10 @@ def _read_env() -> dict[str, Any]:
         "admin_id": fallback_admin_id,
         "admin_ids": normalized_admin_ids,
         "database_path": os.getenv("DATABASE_PATH", "fitness.db"),
-        "timezone": os.getenv("TIMEZONE", "UTC"),
+        "timezone": os.getenv("TIMEZONE", "Europe/Moscow"),
         "daily_report_hour": os.getenv("DAILY_REPORT_HOUR", "9"),
-        "daily_report_minute": os.getenv("DAILY_REPORT_MINUTE", "0"),
-        "report_check_interval_seconds": os.getenv("REPORT_CHECK_INTERVAL_SECONDS", "60"),
+        "daily_report_minute": os.getenv("DAILY_REPORT_MINUTE", "5"),
+        "report_check_interval_seconds": os.getenv("REPORT_CHECK_INTERVAL_SECONDS", "600"),
     }
 
 
