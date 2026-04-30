@@ -770,6 +770,31 @@ class Database:
             )
         return result
 
+    def has_daily_report_been_sent(self, report_date: str, recipient_id: int) -> bool:
+        """Return True when daily report was already sent to recipient on date."""
+        with self.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM daily_reports_sent
+                WHERE report_date = ? AND recipient_id = ?
+                LIMIT 1
+                """,
+                (report_date, recipient_id),
+            ).fetchone()
+        return row is not None
+
+    def mark_daily_report_sent(self, report_date: str, recipient_id: int) -> None:
+        """Persist successful daily report delivery to recipient."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO daily_reports_sent (report_date, recipient_id)
+                VALUES (?, ?)
+                """,
+                (report_date, recipient_id),
+            )
+
     def _seed_products(self, conn: sqlite3.Connection) -> None:
         conn.executemany(
             """
