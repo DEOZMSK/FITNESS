@@ -570,8 +570,9 @@ async def _start_questionnaire(message: Message, state: FSMContext) -> None:
     await message.answer(get_question_text("name"))
 
 
-@router.message(F.text == BUTTON_DIAGNOSTICS)
-async def diagnostics_entry(message: Message, state: FSMContext) -> None:
+
+
+async def start_diagnostics_flow(message: Message, state: FSMContext) -> None:
     db = Database()
     profile = db.get_latest_profile_or_none(message.from_user.id)
     if not profile:
@@ -582,6 +583,11 @@ async def diagnostics_entry(message: Message, state: FSMContext) -> None:
         "Вы уже проходили фитнес-диагностику. Что хотите сделать?",
         reply_markup=get_existing_profile_actions_keyboard(),
     )
+
+
+@router.message(F.text == BUTTON_DIAGNOSTICS)
+async def diagnostics_entry(message: Message, state: FSMContext) -> None:
+    await start_diagnostics_flow(message, state)
 
 
 @router.message(F.text == BUTTON_VIEW_RESULTS)
