@@ -9,10 +9,12 @@ from zoneinfo import ZoneInfo
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.filters import CommandStart
+from aiogram.filters.command import CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile, Message
 
 from app.bot.handlers.about import build_contacts_text, show_about_menu_message
+from app.bot.handlers.diagnostics import start_diagnostics_flow
 from app.bot.keyboards import (
     BUTTON_ABOUT,
     BUTTON_CANCEL,
@@ -52,7 +54,7 @@ def _resolve_welcome_video_path() -> Path | None:
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext) -> None:
+async def cmd_start(message: Message, state: FSMContext, command: CommandObject) -> None:
     await state.clear()
     user_id = None
     if message.from_user:
@@ -64,6 +66,11 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             last_name=message.from_user.last_name,
         )
         log_event("start", telegram_id=message.from_user.id, user_id=user_id)
+    start_arg = (command.args or "").strip().lower()
+    if start_arg in {"diagnostic", "diagnostics"}:
+        await start_diagnostics_flow(message, state)
+        return
+
     welcome_text = get_welcome_text()
     video_path = _resolve_welcome_video_path()
 
@@ -80,7 +87,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 
 @router.message(F.text == BUTTON_UPDATE_BOT)
 async def refresh_bot(message: Message, state: FSMContext) -> None:
-    await cmd_start(message, state)
+    await cmd_start(message, state, CommandObject(prefix="/", command="start"))
 
 
 @router.message(F.text == BUTTON_HOME_MENU)
