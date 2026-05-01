@@ -1,0 +1,13 @@
+name: Amvera Deploy Trigger
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Amvera deploy from main
+        run: echo "Trigger Amvera deploy from main"
