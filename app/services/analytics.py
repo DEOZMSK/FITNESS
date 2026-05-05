@@ -29,6 +29,16 @@ _FUNNEL_EVENTS = (
     "payment_success",
 )
 
+_EVENT_LABELS_RU = {
+    "start": "Старт",
+    "about_open": "Открыли раздел «О боте»",
+    "services_open": "Открыли раздел «Услуги»",
+    "diagnostics_start": "Начали диагностику",
+    "diagnostics_complete": "Завершили диагностику",
+    "donate_start": "Нажали «Поддержать/донат»",
+    "payment_success": "Успешная оплата",
+}
+
 
 def _connection(database_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(database_path)
@@ -147,10 +157,13 @@ def build_daily_report_text(report_date: date, stats: dict[str, Any]) -> str:
 
     start_count = int(event_counts.get("start", 0) or 0)
 
-    def conv_line(event_key: str, label: str) -> str:
+    def event_label(event_key: str) -> str:
+        return _EVENT_LABELS_RU.get(event_key, event_key)
+
+    def conv_line(event_key: str) -> str:
         value = int(event_counts.get(event_key, 0) or 0)
         percent = (value / start_count * 100) if start_count else 0.0
-        return f"• {label}: {value}/{start_count} ({percent:.1f}%)"
+        return f"• {event_label(event_key)}: {value}/{start_count} ({percent:.1f}%)"
 
     lines = [
         "📊 Ежедневный отчёт по активности",
@@ -162,21 +175,24 @@ def build_daily_report_text(report_date: date, stats: dict[str, Any]) -> str:
         "",
         "🧭 Воронка",
     ]
-    lines.extend(f"• {event}: {int(event_counts.get(event, 0) or 0)}" for event in _FUNNEL_EVENTS)
+    lines.extend(
+        f"• {event_label(event)}: {int(event_counts.get(event, 0) or 0)}"
+        for event in _FUNNEL_EVENTS
+    )
     lines.extend(
         [
             "",
-            "📈 Конверсии от start",
-            conv_line("diagnostics_complete", "diagnostics_complete/start"),
-            conv_line("services_open", "services_open/start"),
-            conv_line("payment_success", "payment_success/start"),
+            "📈 Конверсии от старта",
+            conv_line("diagnostics_complete"),
+            conv_line("services_open"),
+            conv_line("payment_success"),
             "",
             "🗂 Все события",
         ]
     )
 
     for event_name in sorted(event_counts):
-        lines.append(f"• {event_name}: {int(event_counts[event_name] or 0)}")
+        lines.append(f"• {event_label(event_name)}: {int(event_counts[event_name] or 0)}")
 
     return "\n".join(lines)
 
