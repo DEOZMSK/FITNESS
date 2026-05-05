@@ -34,6 +34,7 @@ from app.services.analytics import (
     get_event_stats_for_period,
     log_event,
 )
+from app.services.payments import send_hidden_payment_offer
 
 router = Router(name=__name__)
 db = Database()
@@ -67,6 +68,13 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
         )
         log_event("start", telegram_id=message.from_user.id, user_id=user_id)
     start_arg = (command.args or "").strip().lower()
+    if start_arg in {"pay_1500", "pay_12000"}:
+        try:
+            await send_hidden_payment_offer(message, start_arg)
+        except RuntimeError:
+            await message.answer("Оплата временно недоступна. Попробуйте позже.")
+        return
+
     if start_arg in {"diagnostic", "diagnostics"}:
         await start_diagnostics_flow(message, state)
         return
@@ -148,4 +156,24 @@ async def stats_yesterday(message: Message) -> None:
         end_local.astimezone(timezone.utc),
     )
     text = build_daily_report_text(report_date_local, stats)
+    await message.answer(text)
+
+
+@router.message(Command("paylinks"))
+async def paylinks(message: Message) -> None:
+    if not message.from_user or message.from_user.id not in get_admin_recipients():
+        await message.answer("Команда доступна только администраторам.")
+        return
+
+    me = await message.bot.get_me()
+    bot_username = me.username
+    if not bot_username:
+        await message.answer("Не удалось определить username бота.")
+        return
+
+    text = (
+        "🔗 Скрытые ссылки на оплату\n\n"
+        f"1 500 ₽:\nhttps://t.me/{bot_username}?start=pay_1500\n\n"
+        f"12 000 ₽:\nhttps://t.me/{bot_username}?start=pay_12000"
+    )
     await message.answer(text)

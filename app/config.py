@@ -13,7 +13,7 @@ class Settings(BaseModel):
     """Environment-backed application settings."""
 
     telegram_bot_token: str
-    provider_token: str
+    provider_token: str = ""
     shop_id: str
     secret_key: str
     admin_id: int = 5948629306
@@ -36,7 +36,7 @@ class Settings(BaseModel):
             return [int(token) for token in tokens]
         raise ValueError("admin_ids must be CSV string or list")
 
-    @field_validator("telegram_bot_token", "provider_token", "shop_id", "secret_key")
+    @field_validator("telegram_bot_token", "shop_id", "secret_key")
     @classmethod
     def validate_required_string(cls, value: str) -> str:
         """Ensure required settings are not empty or whitespace only."""

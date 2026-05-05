@@ -23,6 +23,8 @@ from app.data.reviews import reviews
 from app.data.trainer_profile import trainer_profile
 from app.db import Database
 from app.services import DONATION_MIN_AMOUNT, create_invoice, send_payment_event
+from app.services.admin_notify import get_admin_recipients
+from app.services.payments import HIDDEN_PAYMENT_OFFERS
 from app.services.analytics import log_event
 
 router = Router(name=__name__)
@@ -414,8 +416,34 @@ async def process_donation_amount(message: Message, state: FSMContext) -> None:
 @router.pre_checkout_query()
 async def pre_checkout_handler(query: PreCheckoutQuery) -> None:
     """Approve pre-checkout query from Telegram."""
-    await query.answer(ok=True)
+    if query.invoice_payload.startswith("donation:"):
+        await query.answer(ok=True)
+        return
 
+    valid_payloads = {str(item["payload"]) for item in HIDDEN_PAYMENT_OFFERS.values()}
+    if query.invoice_payload in valid_payloads:
+        await query.answer(ok=True)
+        return
+
+    await query.answer(ok=False, error_message="Неизвестный платёжный сценарий.")
+
+
+async def _notify_hidden_payment_admin(message: Message, payload: str, amount_rub: int) -> None:
+    username = message.from_user.username if message.from_user else None
+    user_id = message.from_user.id if message.from_user else None
+    for admin_id in get_admin_recipients():
+        await message.bot.send_message(
+            admin_id,
+            (
+                "<b>Новая скрытая оплата</b>\n"
+                f"• <b>Сумма</b>: {amount_rub} RUB\n"
+                f"• <b>Username</b>: @{username if username else '—'}\n"
+                f"• <b>User ID</b>: {user_id if user_id is not None else '—'}\n"
+                f"• <b>Payload</b>: <code>{payload}</code>\n"
+                f"• <b>Дата/время (UTC)</b>: <code>{message.date.strftime('%Y-%m-%d %H:%M:%S')}</code>"
+            ),
+            parse_mode="HTML",
+        )
 
 @router.message(F.successful_payment)
 async def successful_payment_handler(message: Message) -> None:
@@ -424,6 +452,18 @@ async def successful_payment_handler(message: Message) -> None:
         return
 
     payload = message.successful_payment.invoice_payload
+    hidden_payload_to_offer = {
+        str(item["payload"]): offer_key for offer_key, item in HIDDEN_PAYMENT_OFFERS.items()
+    }
+    if payload in hidden_payload_to_offer:
+        amount_rub = message.successful_payment.total_amount // 100
+        try:
+            await _notify_hidden_payment_admin(message, payload, amount_rub)
+        except Exception:
+            logger.exception("Failed hidden payment admin notify payload=%s", payload)
+        await message.answer("✅ Оплата прошла. Мы получили платёж и скоро свяжемся с вами.")
+        return
+
     if not payload.startswith("donation:"):
         return
 
