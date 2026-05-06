@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 HIDDEN_PAYMENT_BUTTONS: dict[str, str] = {
-    "pay_1500": "Оплатить 1 500 ₽",
-    "pay_12000": "Оплатить 12 000 ₽",
+    "pay_1500": "Оплатить",
+    "pay_12000": "Оплатить",
 }
 
 HIDDEN_PAYMENT_IMAGES: dict[str, str] = {
@@ -93,11 +93,7 @@ async def send_hidden_payment_offer(message: Message, offer_key: str) -> bool:
     if offer_key not in HIDDEN_PAYMENT_OFFERS:
         return False
 
-    short_text = (
-        "Оплата услуги — 1 500 ₽"
-        if offer_key == "pay_1500"
-        else "Оплата сопровождения — 12 000 ₽"
-    )
+    fallback_text = str(HIDDEN_PAYMENT_OFFERS[offer_key]["title"])
     reply_markup = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -120,14 +116,13 @@ async def send_hidden_payment_offer(message: Message, offer_key: str) -> bool:
         logger.info("send_hidden_payment_offer branch=photo offer_key=%s", offer_key)
         await message.answer_photo(
             photo=FSInputFile(image_path),
-            caption=short_text,
             reply_markup=reply_markup,
         )
         return True
 
     logger.info("send_hidden_payment_offer branch=fallback offer_key=%s", offer_key)
     logger.error("Hidden payment image not found: %s", image_path)
-    await message.answer(short_text, reply_markup=reply_markup)
+    await message.answer(fallback_text, reply_markup=reply_markup)
     return True
 
 
