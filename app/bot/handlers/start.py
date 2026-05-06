@@ -11,7 +11,7 @@ from aiogram.filters import Command
 from aiogram.filters import CommandStart
 from aiogram.filters.command import CommandObject
 from aiogram.fsm.context import FSMContext
-from aiogram.types import FSInputFile, Message
+from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from app.bot.handlers.about import build_contacts_text, show_about_menu_message
 from app.bot.handlers.diagnostics import start_diagnostics_flow
@@ -34,7 +34,7 @@ from app.services.analytics import (
     get_event_stats_for_period,
     log_event,
 )
-from app.services.payments import send_hidden_payment_offer
+from app.services.payments import send_hidden_payment_invoice, send_hidden_payment_offer
 
 router = Router(name=__name__)
 db = Database()
@@ -177,3 +177,23 @@ async def paylinks(message: Message) -> None:
         f"12 000 ₽:\nhttps://t.me/{bot_username}?start=pay_12000"
     )
     await message.answer(text)
+
+
+@router.callback_query(F.data.startswith("hiddenpay:"))
+async def hidden_payment_callback(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.data:
+        await callback.answer()
+        return
+
+    offer_key = callback.data.split(":", 1)[1]
+    try:
+        sent = await send_hidden_payment_invoice(callback.message, offer_key)
+    except RuntimeError:
+        await callback.answer("Оплата временно недоступна. Попробуйте позже.", show_alert=True)
+        return
+
+    if not sent:
+        await callback.answer("Неизвестный платёжный сценарий.", show_alert=True)
+        return
+
+    await callback.answer()
