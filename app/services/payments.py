@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, Message
+from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, Message
 
 from app.config import load_settings
 from app.db import Database
@@ -110,14 +110,22 @@ async def send_hidden_payment_offer(message: Message, offer_key: str) -> bool:
     )
 
     image_path = PROJECT_ROOT / "public" / HIDDEN_PAYMENT_IMAGES[offer_key]
+    logger.info(
+        "send_hidden_payment_offer: offer_key=%s image_path=%s image_exists=%s",
+        offer_key,
+        image_path,
+        image_path.exists(),
+    )
     if image_path.exists():
+        logger.info("send_hidden_payment_offer branch=photo offer_key=%s", offer_key)
         await message.answer_photo(
-            photo=str(image_path),
+            photo=FSInputFile(image_path),
             caption=short_text,
             reply_markup=reply_markup,
         )
         return True
 
+    logger.info("send_hidden_payment_offer branch=fallback offer_key=%s", offer_key)
     logger.error("Hidden payment image not found: %s", image_path)
     await message.answer(short_text, reply_markup=reply_markup)
     return True
