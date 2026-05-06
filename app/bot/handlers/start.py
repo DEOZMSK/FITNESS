@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -38,6 +39,7 @@ from app.services.payments import send_hidden_payment_invoice, send_hidden_payme
 
 router = Router(name=__name__)
 db = Database()
+logger = logging.getLogger(__name__)
 
 
 def _resolve_welcome_video_path() -> Path | None:
@@ -68,6 +70,13 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
         )
         log_event("start", telegram_id=message.from_user.id, user_id=user_id)
     start_arg = (command.args or "").strip().lower()
+    logger.info(
+        "cmd_start payload: message_text=%r command_args=%r start_arg=%r user_id=%s",
+        message.text,
+        command.args,
+        start_arg,
+        message.from_user.id if message.from_user else None,
+    )
     if start_arg in {"pay_1500", "pay_12000"}:
         try:
             await send_hidden_payment_offer(message, start_arg)
