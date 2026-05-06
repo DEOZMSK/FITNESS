@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
-from aiogram.types import LabeledPrice, Message
+import logging
+from pathlib import Path
+
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, Message
 
 from app.config import load_settings
 from app.db import Database
 
 DONATION_MIN_AMOUNT = 300
 CURRENCY = "RUB"
+logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+HIDDEN_PAYMENT_BUTTONS: dict[str, str] = {
+    "pay_1500": "Оплатить 1 500 ₽",
+    "pay_12000": "Оплатить 12 000 ₽",
+}
+
+HIDDEN_PAYMENT_IMAGES: dict[str, str] = {
+    "pay_1500": "cost1500.png",
+    "pay_12000": "cost12000.png",
+}
 
 HIDDEN_PAYMENT_OFFERS: dict[str, dict[str, str | int]] = {
     "pay_1500": {
@@ -74,7 +89,42 @@ async def create_invoice(message: Message, amount_rub: int) -> int:
 
 
 async def send_hidden_payment_offer(message: Message, offer_key: str) -> bool:
-    """Send hidden payment invoice for deep-link offer key."""
+    """Send hidden payment offer message for deep-link offer key."""
+    if offer_key not in HIDDEN_PAYMENT_OFFERS:
+        return False
+
+    short_text = (
+        "Оплата услуги — 1 500 ₽"
+        if offer_key == "pay_1500"
+        else "Оплата сопровождения — 12 000 ₽"
+    )
+    reply_markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=HIDDEN_PAYMENT_BUTTONS[offer_key],
+                    callback_data=f"hiddenpay:{offer_key}",
+                )
+            ]
+        ]
+    )
+
+    image_path = PROJECT_ROOT / "public" / HIDDEN_PAYMENT_IMAGES[offer_key]
+    if image_path.exists():
+        await message.answer_photo(
+            photo=str(image_path),
+            caption=short_text,
+            reply_markup=reply_markup,
+        )
+        return True
+
+    logger.error("Hidden payment image not found: %s", image_path)
+    await message.answer(short_text, reply_markup=reply_markup)
+    return True
+
+
+async def send_hidden_payment_invoice(message: Message, offer_key: str) -> bool:
+    """Send hidden payment invoice for selected offer key."""
     offer = HIDDEN_PAYMENT_OFFERS.get(offer_key)
     if not offer:
         return False
@@ -85,13 +135,6 @@ async def send_hidden_payment_offer(message: Message, offer_key: str) -> bool:
 
     amount_rub = int(offer["amount_rub"])
     amount_kopecks = amount_rub * 100
-
-    short_text = (
-        "Оплата услуги — 1 500 ₽"
-        if offer_key == "pay_1500"
-        else "Оплата сопровождения — 12 000 ₽"
-    )
-    await message.answer(short_text)
     await message.bot.send_invoice(
         chat_id=message.chat.id,
         title=str(offer["title"]),
